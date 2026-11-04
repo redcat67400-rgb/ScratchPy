@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.5
+# Version: V26.6
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -49,7 +49,8 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-UPDATE_URL = "https://raw.githubusercontent.com/redcat67400-rgb/ScratchPy/main/scratchpy.pyw"
+UPDATE_URL = "https://raw.githubusercontent.com/redcat67400-rgb/ScratchPy/program/scratchpy.pyw"
+INSTALLER_URL = "https://raw.githubusercontent.com/redcat67400-rgb/ScratchPy/program/install_scratchpy.py"
 _VERSION_RE = re.compile(r"^\s*#\s*Version:\s*[Vv](\d+)\.(\d+)\s*$")
 
 
@@ -1072,6 +1073,7 @@ class App:
         self.q = queue.Queue(maxsize=64)      # Bound the queue to slow overly chatty programs.
         self.update_q = queue.Queue(maxsize=1)
         self.update_payload = None
+        self.update_installer_payload = None
         self.update_checking = False
         self.closing = False
         self.cat = "Control"
@@ -1120,7 +1122,20 @@ class App:
                 if source_version(source) != remote_version:
                     return
                 compile(source, "scratchpy.pyw", "exec")
-                self.update_q.put_nowait(payload)
+                installer_payload = None
+                try:
+                    req = urllib.request.Request(
+                        INSTALLER_URL, headers={"User-Agent": "ScratchPy updater"})
+                    with urllib.request.urlopen(req, timeout=8) as response:
+                        installer_payload = response.read(1024 * 1024 + 1)
+                    if len(installer_payload) > 1024 * 1024:
+                        installer_payload = None
+                    else:
+                        compile(installer_payload.decode("utf-8-sig"),
+                                "install_scratchpy.py", "exec")
+                except Exception:
+                    installer_payload = None
+                self.update_q.put_nowait((payload, installer_payload))
             except Exception:
                 pass
             finally:
@@ -1133,7 +1148,7 @@ class App:
         if self.closing:
             return
         try:
-            payload = self.update_q.get_nowait()
+            payload, installer_payload = self.update_q.get_nowait()
         except queue.Empty:
             if self.update_checking:
                 self.root.after(200, self.poll_update)
@@ -1143,33 +1158,67 @@ class App:
                 "A newer ScratchPy version is available on GitHub. "
                 "Install it now?", parent=self.root):
             self.update_payload = payload
+            self.update_installer_payload = installer_payload
             self.on_close()
 
     def install_update(self):
         if self.update_payload is None:
             return True
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        installer_payload = self.update_installer_payload
+        if local_app_data:
+            installed_folder = os.path.normcase(os.path.abspath(
+                os.path.join(local_app_data, "ScratchPy")))
+            current_folder = os.path.normcase(os.path.abspath(os.path.dirname(__file__)))
+            installer = os.path.join(installed_folder, "install_scratchpy.py")
+            if current_folder == installed_folder and os.path.isfile(installer):
+                try:
+                    subprocess.Popen(
+                        [sys.executable, installer, "--update", "--wait-pid",
+                         str(os.getpid()), "--restart"],
+                        cwd=installed_folder, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        creationflags=(getattr(subprocess, "DETACHED_PROCESS", 0) |
+                                       getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+                    return True
+                except OSError as ex:
+                    messagebox.showerror(
+                        "Update", "Could not start the installed updater:\n%s" % ex,
+                        parent=self.root)
+                    return False
         folder = None
         try:
             target = os.path.abspath(__file__)
             folder = tempfile.mkdtemp(prefix="scratchpy-update-")
             staged = os.path.join(folder, "scratchpy.pyw")
+            staged_installer = (os.path.join(folder, "install_scratchpy.py")
+                                if installer_payload else None)
             updater = os.path.join(folder, "update.ps1")
             with open(staged, "wb") as f:
                 f.write(self.update_payload)
+            if staged_installer:
+                with open(staged_installer, "wb") as f:
+                    f.write(installer_payload)
 
             def ps_quote(value):
                 return "'" + value.replace("'", "''") + "'"
 
+            copy_installer = (
+                "Copy-Item -LiteralPath %s -Destination %s -Force\n" %
+                (ps_quote(staged_installer),
+                 ps_quote(os.path.join(os.path.dirname(target), "install_scratchpy.py")))
+            ) if staged_installer else ""
             script = (
                 "$processId = %d\n"
                 "while (Get-Process -Id $processId -ErrorAction SilentlyContinue) { "
                 "Start-Sleep -Seconds 1 }\n"
                 "Copy-Item -LiteralPath %s -Destination %s -Force\n"
+                "%s"
                 "if ($?) { Start-Process -FilePath %s "
                 "-ArgumentList ('\"' + %s + '\"') }\n"
                 "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\n"
                 "Remove-Item -LiteralPath %s -Recurse -Force\n"
-            ) % (os.getpid(), ps_quote(staged), ps_quote(target),
+            ) % (os.getpid(), ps_quote(staged), ps_quote(target), copy_installer,
                  ps_quote(sys.executable), ps_quote(target), ps_quote(folder))
             with open(updater, "w", encoding="utf-8") as f:
                 f.write(script)
