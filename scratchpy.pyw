@@ -1387,6 +1387,24 @@ class App:
         st.map("TButton", background=[("pressed", self.BORDER), ("active", self.BG2)],
                foreground=[("disabled", self.MUTED)],
                bordercolor=[("active", self.ACCENT), ("pressed", self.ACCENT)])
+        if dark:
+            run_colors = ("#2e7d4f", "#37955d", "#276b43", "#58a879")
+            stop_colors = ("#8f3b3b", "#a84646", "#7a3030", "#c06161")
+            button_text = self.FG
+        else:
+            run_colors = ("#15803d", "#166534", "#14532d", "#166534")
+            stop_colors = ("#dc2626", "#b91c1c", "#991b1b", "#b91c1c")
+            button_text = "white"
+        st.configure("Run.TButton", background=run_colors[0], foreground=button_text,
+                     bordercolor=run_colors[3])
+        st.map("Run.TButton", background=[("pressed", run_colors[2]),
+                                           ("active", run_colors[1])],
+               foreground=[("active", button_text), ("pressed", button_text)])
+        st.configure("Stop.TButton", background=stop_colors[0], foreground=button_text,
+                     bordercolor=stop_colors[3])
+        st.map("Stop.TButton", background=[("pressed", stop_colors[2]),
+                                            ("active", stop_colors[1])],
+               foreground=[("active", button_text), ("pressed", button_text)])
         st.configure("TEntry", fieldbackground=self.EDIT, foreground=self.FG,
                      bordercolor=self.BORDER, insertcolor=self.FG)
         st.configure("TCombobox", fieldbackground=self.EDIT, background=self.BG2,
