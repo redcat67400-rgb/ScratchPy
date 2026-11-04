@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Version: V26.4
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -47,6 +48,28 @@ import urllib.request
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
+
+UPDATE_URL = "https://raw.githubusercontent.com/redcat67400-rgb/ScratchPy/main/scratchpy.pyw"
+_VERSION_RE = re.compile(r"^\s*#\s*Version:\s*[Vv](\d+)\.(\d+)\s*$")
+
+
+def source_version(source):
+    for line in source.splitlines()[:5]:
+        match = _VERSION_RE.match(line)
+        if match:
+            return "V%s.%s" % match.groups()
+    return None
+
+
+def version_key(version):
+    if not version:
+        return None
+    match = re.fullmatch(r"[Vv](\d+)\.(\d+)", version)
+    return tuple(map(int, match.groups())) if match else None
+
+
+with open(__file__, "rb") as _source_file:
+    APP_VERSION = source_version(_source_file.read(512).decode("utf-8-sig"))
 
 # --------------------------------------------------------------------------
 #  High DPI support for Windows
@@ -757,8 +780,8 @@ class Renderer:
                 top = [(x, y)] + _notch_r(x, y, x + W)
             pts = top + [(x + W, y + Hh)] + _bump_l(x, y + Hh)
             self.c.create_polygon(_flat(pts), fill=col, outline=ol, width=wd, tags="shape")
-            self.draw_row(b, x + self.PADX, y + hat, Hh - hat)
             self._hit(x, y, W, Hh, b, ctx)
+            self.draw_row(b, x + self.PADX, y + hat, Hh - hat)
             return
         # C-shaped blocks (one or two compartments).
         arms = [(Hh, b.body)]
@@ -776,8 +799,8 @@ class Renderer:
             cur = bb
         pts += [(x + W, cur + self.FOOT)] + _bump_l(x, cur + self.FOOT)
         self.c.create_polygon(_flat(pts), fill=col, outline=ol, width=wd, tags="shape")
-        self.draw_row(b, x + self.PADX, y, Hh)
         self._hit(x, y, W, Hh, b, ctx)
+        self.draw_row(b, x + self.PADX, y, Hh)
         if shape == "celse":
             my = placed[1][0]
             self.c.create_text(x + self.PADX, my + self.MID / 2, text=b.spec["alt"],
@@ -1014,6 +1037,7 @@ class App:
         self.zefont = tkfont.Font(family=base.actual("family"), size=10)
         self.zoom = 1.0
         self.scripts = []
+        self.saved_state = None
         self.libs = []
         self.paths = []
         self.import_lines = []
@@ -1040,17 +1064,119 @@ class App:
         self.proc = None
         self.token = 0
         self.q = queue.Queue(maxsize=64)      # Bound the queue to slow overly chatty programs.
+        self.update_q = queue.Queue(maxsize=1)
+        self.update_payload = None
+        self.update_checking = False
+        self.closing = False
         self.cat = "Control"
         self._job = None
         self.build_ui()
         self.show_palette(self.cat)
         self.set_scripts([])          # Start with an empty workspace.
+        self.mark_saved()
         
         # Position the split panes after the window is drawn.
         root.after(800, self._init_paned_positions)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.after(40, self.poll)
         root.after(100, self.ai_poll)
+        root.after(1500, self.check_for_updates)
+
+    def check_for_updates(self):
+        if sys.platform != "win32" or getattr(sys, "frozen", False) or self.update_checking:
+            return
+        self.update_checking = True
+
+        def check():
+            try:
+                req = urllib.request.Request(
+                    UPDATE_URL,
+                    headers={"User-Agent": "ScratchPy updater",
+                             "Range": "bytes=0-511"})
+                with urllib.request.urlopen(req, timeout=8) as response:
+                    remote_version = source_version(
+                        response.read(512).decode("utf-8-sig"))
+                remote_key = version_key(remote_version)
+                current_key = version_key(APP_VERSION)
+                if remote_key is None or current_key is None or remote_key <= current_key:
+                    return
+
+                req = urllib.request.Request(
+                    UPDATE_URL, headers={"User-Agent": "ScratchPy updater"})
+                with urllib.request.urlopen(req, timeout=8) as response:
+                    payload = response.read(5 * 1024 * 1024 + 1)
+                if len(payload) > 5 * 1024 * 1024:
+                    return
+                source = payload.decode("utf-8-sig")
+                if source_version(source) != remote_version:
+                    return
+                compile(source, "scratchpy.pyw", "exec")
+                self.update_q.put_nowait(payload)
+            except Exception:
+                pass
+            finally:
+                self.update_checking = False
+
+        threading.Thread(target=check, daemon=True).start()
+        self.root.after(200, self.poll_update)
+
+    def poll_update(self):
+        if self.closing:
+            return
+        try:
+            payload = self.update_q.get_nowait()
+        except queue.Empty:
+            if self.update_checking:
+                self.root.after(200, self.poll_update)
+            return
+        if messagebox.askyesno(
+                "Update available",
+                "A newer ScratchPy version is available on GitHub. "
+                "Install it now?", parent=self.root):
+            self.update_payload = payload
+            self.on_close()
+
+    def install_update(self):
+        if self.update_payload is None:
+            return True
+        folder = None
+        try:
+            target = os.path.abspath(__file__)
+            folder = tempfile.mkdtemp(prefix="scratchpy-update-")
+            staged = os.path.join(folder, "scratchpy.pyw")
+            updater = os.path.join(folder, "update.ps1")
+            with open(staged, "wb") as f:
+                f.write(self.update_payload)
+
+            def ps_quote(value):
+                return "'" + value.replace("'", "''") + "'"
+
+            script = (
+                "$processId = %d\n"
+                "while (Get-Process -Id $processId -ErrorAction SilentlyContinue) { "
+                "Start-Sleep -Seconds 1 }\n"
+                "Copy-Item -LiteralPath %s -Destination %s -Force\n"
+                "if ($?) { Start-Process -FilePath %s "
+                "-ArgumentList ('\"' + %s + '\"') }\n"
+                "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\n"
+                "Remove-Item -LiteralPath %s -Recurse -Force\n"
+            ) % (os.getpid(), ps_quote(staged), ps_quote(target),
+                 ps_quote(sys.executable), ps_quote(target), ps_quote(folder))
+            with open(updater, "w", encoding="utf-8") as f:
+                f.write(script)
+            flags = 0x00000008 | 0x08000000 if sys.platform == "win32" else 0
+            subprocess.Popen(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-File", updater], creationflags=flags,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL)
+            return True
+        except OSError as ex:
+            if folder:
+                shutil.rmtree(folder, ignore_errors=True)
+            messagebox.showerror("Update", "Could not start the updater:\n%s" % ex,
+                                 parent=self.root)
+            return False
 
     def _init_paned_positions(self):
         """Set initial panel positions based on the screen size."""
@@ -2007,8 +2133,11 @@ class App:
                 if indrag:
                     continue
                 if sx - 6 <= px <= sx + sw + 6 and sy - 6 <= py <= sy + sh + 6:
-                    if best is None or sw * sh < best[0]:
-                        best = (sw * sh, ("slot", parent, idx, sx, sy, sw, sh))
+                    outside = not (sx <= px <= sx + sw and sy <= py <= sy + sh)
+                    distance = math.hypot(px - (sx + sw / 2), py - (sy + sh / 2))
+                    rank = (outside, sw * sh, distance)
+                    if best is None or rank < best[0]:
+                        best = (rank, ("slot", parent, idx, sx, sy, sw, sh))
             return best[1] if best else None
         H = r.lsize(blocks)
         hat = first.shape == "hat"
@@ -2043,6 +2172,25 @@ class App:
             self.ws.create_rectangle(sx - 2, sy - 2, sx + sw + 2, sy + sh + 2,
                                      outline="#4C97FF", width=3, tags="shape")
 
+    def block_size(self, blocks):
+        r = self.wsr
+        if blocks and blocks[0].shape in REPORTERS:
+            return r.rsize(blocks[0])
+        return max((r.hsize(b)[0] for b in blocks), default=0), r.lsize(blocks)
+
+    def free_position(self, x, y, w, h):
+        gap = 12
+        while True:
+            next_y = y
+            for script in self.scripts:
+                sw, sh = self.block_size(script.blocks)
+                if (x < script.x + sw + gap and x + w + gap > script.x and
+                        y < script.y + sh + gap and y + h + gap > script.y):
+                    next_y = max(next_y, script.y + sh + gap)
+            if next_y == y:
+                return x, y
+            y = next_y
+
     def on_release(self, e):
         if self.band:
             self.band_release()
@@ -2057,9 +2205,19 @@ class App:
         if "group" in d:                            # Multiple stacks are moved together.
             self.drag = None
             if inside:
+                bounds = [(g["dx"], g["dy"], *self.block_size(g["blocks"]))
+                          for g in d["group"]]
+                left = min(g[0] for g in bounds)
+                top = min(g[1] for g in bounds)
+                right = max(g[0] + g[2] for g in bounds)
+                bottom = max(g[1] + g[3] for g in bounds)
+                x, y = self.free_position(max(d["x"] + left, 4), max(d["y"] + top, 4),
+                                          right - left, bottom - top)
+                shift_x = x - (d["x"] + left)
+                shift_y = y - (d["y"] + top)
                 for g in d["group"]:
-                    self.scripts.append(Script(max(d["x"] + g["dx"], 4), max(d["y"] + g["dy"], 4),
-                                               g["blocks"]))
+                    self.scripts.append(Script(d["x"] + g["dx"] + shift_x,
+                                               d["y"] + g["dy"] + shift_y, g["blocks"]))
             else:
                 self.sel = set()
             self.scripts = [s for s in self.scripts if s.blocks]
@@ -2077,9 +2235,12 @@ class App:
                 old = parent.fields[idx]
                 parent.fields[idx] = blocks[0]
                 if isinstance(old, Block):
-                    self.scripts.append(Script(sx + 30, sy + 30, [old]))
+                    x, y = self.free_position(sx + 30, sy + 30, *self.block_size([old]))
+                    self.scripts.append(Script(x, y, [old]))
             else:
-                self.scripts.append(Script(max(d["x"], 4), max(d["y"], 4), blocks))
+                x, y = max(d["x"], 4), max(d["y"], 4)
+                x, y = self.free_position(x, y, *self.block_size(blocks))
+                self.scripts.append(Script(x, y, blocks))
         self.scripts = [s for s in self.scripts if s.blocks]
         self.refresh()
 
@@ -2132,6 +2293,20 @@ class App:
         self.show_palette(self.cat if self.cat in CATS else "Control")
         self.refresh()
 
+    def project_state(self):
+        data = {
+            "scripts": [{"x": s.x, "y": s.y, "blocks": [to_dict(b) for b in s.blocks]}
+                        for s in self.scripts],
+            "paths": self.paths,
+            "libs": self.libs,
+            "imports": self.import_lines,
+            "code": self.current_code(),
+        }
+        return json.dumps(data, sort_keys=True, ensure_ascii=False)
+
+    def mark_saved(self):
+        self.saved_state = self.project_state()
+
     def new(self):
         if (self.scripts or self.libs) and not messagebox.askyesno(
                 "New project", "Clear the current project (blocks and imported libraries)?"):
@@ -2145,6 +2320,7 @@ class App:
         self.cat = "Control"
         self.search_var.set("")
         self.set_scripts([])
+        self.mark_saved()
 
     def load_example(self):
         B = Block
@@ -2172,12 +2348,19 @@ class App:
         path = filedialog.asksaveasfilename(defaultextension=".json",
                             filetypes=[("ScratchPy project", "*.json")])
         if not path:
-            return
+            return False
         data = {"version": 1, "paths": self.paths, "libs": self.libs,
                 "imports": self.import_lines, "scripts": [
             {"x": s.x, "y": s.y, "blocks": [to_dict(b) for b in s.blocks]} for s in self.scripts]}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=1)
+        except OSError as ex:
+            messagebox.showerror("Save project", "Could not save the project:\n%s" % ex,
+                                 parent=self.root)
+            return False
+        self.mark_saved()
+        return True
 
     def open_py(self, path):
         try:
@@ -2221,6 +2404,7 @@ class App:
                 if mod not in new_libs:
                     new_libs.append(mod)
         self.set_scripts([Script(30, 30, [Block("start")] + blocks)])
+        self.mark_saved()
         if new_libs:
             self.search_var.set("")
             self.show_palette(new_libs[0])
@@ -2254,6 +2438,7 @@ class App:
             messagebox.showerror("Open", "Invalid file:\n%s" % ex)
             return
         self.set_scripts(scripts)
+        self.mark_saved()
 
     def export_py(self):
         path = filedialog.asksaveasfilename(defaultextension=".py",
@@ -2526,7 +2711,50 @@ class App:
         self.ai_write("↩ Previous code restored.", "info")
     # ------------------------------------------
 
+    def ask_save_changes(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Save changes?")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        result = {"value": None}
+
+        def finish(value):
+            result["value"] = value
+            dialog.destroy()
+
+        body = ttk.Frame(dialog, padding=16)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Do you want to save your changes before closing?").pack(
+            anchor="w", pady=(0, 14))
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="e")
+        yes = ttk.Button(buttons, text="Yes", command=lambda: finish(True))
+        yes.pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="No", command=lambda: finish(False)).pack(
+            side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Cancel", command=lambda: finish(None)).pack(side="left")
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(None))
+        dialog.bind("<Escape>", lambda e: finish(None))
+        dialog.bind("<Return>", lambda e: finish(True))
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        dialog.grab_set()
+        yes.focus_set()
+        dialog.wait_window()
+        return result["value"]
+
     def on_close(self):
+        if self.closing:
+            return
+        if self.project_state() != self.saved_state:
+            save = self.ask_save_changes()
+            if save is None or (save and not self.save_file()):
+                return
+        if not self.install_update():
+            return
+        self.closing = True
         self.stop(quiet=True)
         self.root.destroy()
 
