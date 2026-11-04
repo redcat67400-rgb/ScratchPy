@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.4
+# Version: V26.5
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -1028,6 +1028,10 @@ class App:
             except tk.TclError:
                 pass
         
+        self.cfg = load_config()
+        if "gemini_key" in self.cfg:
+            self.cfg.pop("gemini_key")
+            save_config(self.cfg)
         self.set_icon()
         self.setup_theme()
         base = tkfont.nametofont("TkDefaultFont")
@@ -1038,6 +1042,12 @@ class App:
         self.zoom = 1.0
         self.scripts = []
         self.saved_state = None
+        app_file = sys.executable if getattr(sys, "frozen", False) else __file__
+        self.app_folder = os.path.dirname(os.path.abspath(app_file))
+        self.autosave_path = os.path.join(self.app_folder, "save", "autosave.json")
+        self.autosave_interval = 60_000
+        self.autosaved_state = None
+        self.autosave_job = None
         self.libs = []
         self.paths = []
         self.import_lines = []
@@ -1047,10 +1057,6 @@ class App:
         self.code_error = None    # Syntax error in edited code (None means valid).
         self._code_job = None
         self._drag_job = None
-        self.cfg = load_config()
-        if "gemini_key" in self.cfg:
-            self.cfg.pop("gemini_key")
-            save_config(self.cfg)
         self.ai_history = []      # Assistant conversation: ("user" | "model", text).
         self.ai_busy = False
         self.ai_token = 0
@@ -1074,6 +1080,7 @@ class App:
         self.show_palette(self.cat)
         self.set_scripts([])          # Start with an empty workspace.
         self.mark_saved()
+        self.autosaved_state = self.project_state()
         
         # Position the split panes after the window is drawn.
         root.after(800, self._init_paned_positions)
@@ -1081,6 +1088,8 @@ class App:
         root.after(40, self.poll)
         root.after(100, self.ai_poll)
         root.after(1500, self.check_for_updates)
+        root.after(1000, self.restore_autosave)
+        self.autosave_job = root.after(self.autosave_interval, self.autosave_tick)
 
     def check_for_updates(self):
         if sys.platform != "win32" or getattr(sys, "frozen", False) or self.update_checking:
@@ -1232,6 +1241,9 @@ class App:
     def setup_theme(self):
         """Set the dark theme and use Calibri (or Arial as a fallback)."""
         root = self.root
+        self.theme_name = self.cfg.get("theme", "dark")
+        if self.theme_name not in ("light", "dark"):
+            self.theme_name = "dark"
         BG, BG2, EDIT, FG, MUTED, ACCENT, BORDER = (self.BG, self.BG2, self.EDIT, self.FG,
                                                     self.MUTED, self.ACCENT, self.BORDER)
         fams = {f.lower(): f for f in tkfont.families(root)}
@@ -1275,9 +1287,9 @@ class App:
                      borderwidth=1, bordercolor=BORDER)
         st.map("TButton", background=[("pressed", "#454b58"), ("active", "#373b47")],
                foreground=[("disabled", MUTED)], bordercolor=[("active", ACCENT)])
-        st.configure("Run.TButton", background="#2e7d4f", bordercolor="#2e7d4f")
+        st.configure("Run.TButton", background="#2e7d4f", bordercolor="#58a879")
         st.map("Run.TButton", background=[("pressed", "#276b43"), ("active", "#37955d")])
-        st.configure("Stop.TButton", background="#8f3b3b", bordercolor="#8f3b3b")
+        st.configure("Stop.TButton", background="#8f3b3b", bordercolor="#c06161")
         st.map("Stop.TButton", background=[("pressed", "#7a3030"), ("active", "#a84646")])
         st.configure("TEntry", fieldbackground=EDIT, foreground=FG, padding=4, bordercolor=BORDER,
                      insertcolor=FG)
@@ -1291,7 +1303,106 @@ class App:
                      arrowsize=13, relief="flat")
         st.map("TScrollbar", background=[("active", "#4f5565"), ("pressed", "#5d6475")])
         st.configure("TSeparator", background=BORDER)
+        self.style = st
+        self.apply_theme()
         return fam, size
+
+    def apply_theme(self):
+        dark = self.theme_name == "dark"
+        colors = ({"BG": "#1e2027", "BG2": "#2b2e38", "EDIT": "#15171c",
+                   "FG": "#e4e6eb", "MUTED": "#9aa0aa", "ACCENT": "#4C97FF",
+                   "BORDER": "#3a3e4a", "PAL": "#262932", "WS": "#1b1d23",
+                   "CONSOLE": "#101216", "CONSOLE_FG": "#d6dae0"} if dark else
+                  {"BG": "#f3f5f8", "BG2": "#e5e9ef", "EDIT": "#ffffff",
+                   "FG": "#20242b", "MUTED": "#626b78", "ACCENT": "#2563eb",
+                   "BORDER": "#c5ccd6", "PAL": "#f7f8fa", "WS": "#edf1f5",
+                   "CONSOLE": "#e4e8ed", "CONSOLE_FG": "#20242b"})
+        colors["BUTTON_BORDER"] = "#596171" if dark else "#98a2b1"
+        self.theme_colors = colors
+        self.BG, self.BG2, self.EDIT = colors["BG"], colors["BG2"], colors["EDIT"]
+        self.FG, self.MUTED = colors["FG"], colors["MUTED"]
+        self.ACCENT, self.BORDER = colors["ACCENT"], colors["BORDER"]
+        self.root.configure(bg=self.BG)
+        for key, value in (("TCombobox*Listbox.background", self.EDIT),
+                           ("TCombobox*Listbox.foreground", self.FG),
+                           ("TCombobox*Listbox.selectBackground", self.ACCENT),
+                           ("TCombobox*Listbox.selectForeground", "white")):
+            self.root.option_add("*" + key, value)
+        st = self.style
+        st.configure(".", background=self.BG, foreground=self.FG,
+                     fieldbackground=self.EDIT, bordercolor=self.BORDER,
+                     lightcolor=self.BG2, darkcolor=self.BG2, troughcolor=self.BG,
+                     focuscolor=self.BG, insertcolor=self.FG)
+        st.configure("TButton", background=self.BG2, foreground=self.FG,
+                   relief="solid", borderwidth=1, bordercolor=colors["BUTTON_BORDER"])
+        st.map("TButton", background=[("pressed", self.BORDER), ("active", self.BG2)],
+               foreground=[("disabled", self.MUTED)],
+               bordercolor=[("active", self.ACCENT), ("pressed", self.ACCENT)])
+        st.configure("TEntry", fieldbackground=self.EDIT, foreground=self.FG,
+                     bordercolor=self.BORDER, insertcolor=self.FG)
+        st.configure("TCombobox", fieldbackground=self.EDIT, background=self.BG2,
+                     foreground=self.FG, arrowcolor=self.FG, bordercolor=self.BORDER)
+        st.map("TCombobox", fieldbackground=[("readonly", self.EDIT)],
+               foreground=[("readonly", self.FG)],
+               selectbackground=[("readonly", self.ACCENT)],
+               selectforeground=[("readonly", "white")])
+        st.configure("TScrollbar", background=self.BG2, troughcolor=self.BG,
+                     bordercolor=self.BG, arrowcolor=self.FG, lightcolor=self.BG2,
+                     darkcolor=self.BG2)
+        st.configure("TSeparator", background=self.BORDER)
+        st.configure("TNotebook", background=self.BG, bordercolor=self.BORDER)
+        st.configure("TNotebook.Tab", background=self.BG2, foreground=self.MUTED,
+                     padding=(14, 7))
+        st.map("TNotebook.Tab", background=[("selected", self.BG)],
+               foreground=[("selected", self.FG)])
+        st.configure("TRadiobutton", background=self.BG2, foreground=self.FG)
+        st.map("TRadiobutton", background=[("active", self.BG2)],
+               foreground=[("disabled", self.MUTED)])
+
+        category_labels = set(getattr(self, "cat_labels", {}).values())
+
+        def recolor(parent):
+            for widget in parent.winfo_children():
+                if widget in category_labels:
+                    continue
+                if isinstance(widget, tk.Frame):
+                    widget.configure(bg=self.BG2)
+                elif isinstance(widget, tk.Label):
+                    widget.configure(bg=self.BG2, fg=self.FG)
+                elif isinstance(widget, tk.PanedWindow):
+                    widget.configure(bg=self.BG)
+                elif isinstance(widget, tk.Canvas):
+                    bg = colors["PAL"] if widget is getattr(self, "pal", None) else colors["WS"]
+                    widget.configure(bg=bg)
+                recolor(widget)
+
+        recolor(self.root)
+        if hasattr(self, "code"):
+            self.code.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG,
+                                selectbackground="#3b4261" if dark else "#cbdcff")
+            self.code.tag_configure("errline", background="#5a1d1d" if dark else "#ffe0df")
+            self.console.configure(bg=colors["CONSOLE"], fg=colors["CONSOLE_FG"])
+            self.console.tag_configure("err", foreground="#ff8a80" if dark else "#b42318")
+            self.ai_chat.configure(bg=self.EDIT, fg=colors["CONSOLE_FG"])
+            for tag, light, dark_color in (
+                    ("user", "#26733b", "#a6e3a1"), ("bot", "#2459a6", "#89b4fa"),
+                    ("err", "#b42318", "#f38ba8"), ("info", "#626b78", "#9399b2"),
+                    ("who", "#735c00", "#f9e2af"), ("undo", "#735c00", "#f9e2af")):
+                self.ai_chat.tag_configure(tag, foreground=dark_color if dark else light)
+            self.ai_chat.tag_configure("icode", background="#313244" if dark else "#e5e9ef",
+                                       foreground="#f5e0dc" if dark else "#30343b")
+            self.ai_chat.tag_configure("code", background="#11111b" if dark else "#e5e9ef",
+                                       foreground="#f5e0dc" if dark else "#30343b")
+
+    def set_theme(self, theme):
+        if theme not in ("light", "dark") or theme == self.theme_name:
+            return
+        self.theme_name = theme
+        self.cfg["theme"] = theme
+        save_config(self.cfg)
+        if hasattr(self, "settings_theme_var"):
+            self.settings_theme_var.set(theme)
+        self.apply_theme()
 
     # ---------- interface ----------
     def build_ui(self):
@@ -1319,9 +1430,10 @@ class App:
         ttk.Button(zf, text="−", width=3, command=lambda: self.zoom_by(0.8)).pack(side="right", padx=2)
         tk.Label(zf, text="Zoom:").pack(side="right", padx=(8, 2))
 
-        self.main_paned = tk.PanedWindow(root, orient="horizontal", sashwidth=6, sashrelief="flat",
+        self.tabs = ttk.Notebook(root)
+        self.tabs.pack(fill="both", expand=True)
+        self.main_paned = tk.PanedWindow(self.tabs, orient="horizontal", sashwidth=6, sashrelief="flat",
                                     opaqueresize=False)
-        self.main_paned.pack(fill="both", expand=True)
 
         # 1. Palette (left)
         left = tk.Frame(self.main_paned)
@@ -1454,6 +1566,31 @@ class App:
 
         self.main_paned.add(self.right_paned, minsize=300)
 
+        self.tabs.add(self.main_paned, text="Workspace")
+        self.settings_tab = ttk.Frame(self.tabs, padding=20)
+        self.tabs.add(self.settings_tab, text="Settings")
+        ttk.Label(self.settings_tab, text="Settings", font=self.font).pack(anchor="w", pady=(0, 16))
+        appearance = ttk.LabelFrame(self.settings_tab, text="Appearance", padding=14)
+        appearance.pack(anchor="nw", fill="x")
+        ttk.Label(appearance, text="Theme").grid(row=0, column=0, sticky="w", padx=(0, 24))
+        self.settings_theme_var = tk.StringVar(value=self.theme_name)
+        ttk.Radiobutton(appearance, text="Light", value="light",
+                        variable=self.settings_theme_var,
+                        command=lambda: self.set_theme(self.settings_theme_var.get())).grid(
+                            row=0, column=1, sticky="w", padx=6)
+        ttk.Radiobutton(appearance, text="Dark", value="dark",
+                        variable=self.settings_theme_var,
+                        command=lambda: self.set_theme(self.settings_theme_var.get())).grid(
+                            row=0, column=2, sticky="w", padx=6)
+        autosave_box = ttk.LabelFrame(self.settings_tab, text="Automatic save", padding=14)
+        autosave_box.pack(anchor="nw", fill="x", pady=(0, 12))
+        ttk.Label(autosave_box, text="Backup file").grid(row=0, column=0, sticky="w", padx=(0, 18))
+        ttk.Label(autosave_box, text=os.path.join("save", "autosave.json")).grid(
+            row=0, column=1, sticky="w")
+        self.autosave_status_var = tk.StringVar(value="Waiting for changes")
+        ttk.Label(autosave_box, textvariable=self.autosave_status_var).grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
         self.palr = Renderer(self.pal, self.font)
         self.wsr = Renderer(self.ws, self.font, self.place_entry)
 
@@ -1484,6 +1621,7 @@ class App:
         root.bind_all("<MouseWheel>", self.on_wheel)
         root.bind_all("<Button-4>", self.on_wheel)
         root.bind_all("<Button-5>", self.on_wheel)
+        self.apply_theme()
 
     def canvas_under(self, e):
         w = self.root.winfo_containing(e.x_root, e.y_root)
@@ -1696,12 +1834,12 @@ class App:
         if w < 50 or h < 50:
             return
         cx, cy = c.canvasx(w / 2), c.canvasy(h / 2)
-        c.create_text(cx, cy - 30, text="Start your program", fill="#e4e6eb",
+        c.create_text(cx, cy - 30, text="Start your program", fill=self.FG,
                       font=(self.font.actual("family"), 20, "bold"), tags="welcome")
-        c.create_text(cx, cy + 12, text="Drag a block from the palette to get started", fill="#9aa0aa",
+        c.create_text(cx, cy + 12, text="Drag a block from the palette to get started", fill=self.MUTED,
                       font=(self.font.actual("family"), 13), tags="welcome")
         c.create_text(cx, cy + 40, text="or press Ctrl + O to open a file",
-                      fill="#9aa0aa", font=(self.font.actual("family"), 13), tags="welcome")
+                  fill=self.MUTED, font=(self.font.actual("family"), 13), tags="welcome")
         c.tag_lower("welcome")
 
     def render(self, preview=False):
@@ -2307,6 +2445,61 @@ class App:
     def mark_saved(self):
         self.saved_state = self.project_state()
 
+    def project_data(self):
+        return {"version": 1, "paths": self.paths, "libs": self.libs,
+                "imports": self.import_lines, "scripts": [
+            {"x": s.x, "y": s.y, "blocks": [to_dict(b) for b in s.blocks]}
+            for s in self.scripts], "code": self.current_code()}
+
+    def write_autosave(self, force=False):
+        state = self.project_state()
+        if not force and state == self.autosaved_state:
+            return False
+        folder = os.path.dirname(self.autosave_path)
+        temp_path = None
+        try:
+            os.makedirs(folder, exist_ok=True)
+            fd, temp_path = tempfile.mkstemp(prefix=".autosave-", suffix=".tmp", dir=folder)
+            with os.fdopen(fd, "w", encoding="utf-8") as output:
+                json.dump(self.project_data(), output, ensure_ascii=False, indent=1)
+            os.replace(temp_path, self.autosave_path)
+            temp_path = None
+        except OSError as ex:
+            if hasattr(self, "autosave_status_var"):
+                self.autosave_status_var.set("Auto-save failed: %s" % ex)
+            return False
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+        self.autosaved_state = state
+        if hasattr(self, "autosave_status_var"):
+            self.autosave_status_var.set("Project saved automatically")
+        return True
+
+    def autosave_tick(self):
+        self.autosave_job = None
+        if self.closing:
+            return
+        self.write_autosave()
+        self.autosave_job = self.root.after(self.autosave_interval, self.autosave_tick)
+
+    def restore_autosave(self):
+        if not os.path.isfile(self.autosave_path):
+            return
+        if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".py"):
+            return
+        if messagebox.askyesno(
+                "Restore autosave?", "An automatically saved project was found. Restore it?",
+                parent=self.root):
+            self.open_file(self.autosave_path)
+            self.autosaved_state = self.project_state()
+        else:
+            try:
+                os.remove(self.autosave_path)
+            except OSError:
+                pass
+            self.autosaved_state = self.project_state()
+
     def new(self):
         if (self.scripts or self.libs) and not messagebox.askyesno(
                 "New project", "Clear the current project (blocks and imported libraries)?"):
@@ -2349,9 +2542,7 @@ class App:
                             filetypes=[("ScratchPy project", "*.json")])
         if not path:
             return False
-        data = {"version": 1, "paths": self.paths, "libs": self.libs,
-                "imports": self.import_lines, "scripts": [
-            {"x": s.x, "y": s.y, "blocks": [to_dict(b) for b in s.blocks]} for s in self.scripts]}
+        data = self.project_data()
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=1)
@@ -2438,7 +2629,14 @@ class App:
             messagebox.showerror("Open", "Invalid file:\n%s" % ex)
             return
         self.set_scripts(scripts)
+        saved_code = data.get("code")
+        if isinstance(saved_code, str):
+            self.code.delete("1.0", "end")
+            self.code.insert("1.0", saved_code)
+            self.code.edit_modified(False)
+            self.apply_code()
         self.mark_saved()
+        self.autosaved_state = self.project_state()
 
     def export_py(self):
         path = filedialog.asksaveasfilename(defaultextension=".py",
@@ -2748,13 +2946,26 @@ class App:
     def on_close(self):
         if self.closing:
             return
+        save_choice = True
         if self.project_state() != self.saved_state:
-            save = self.ask_save_changes()
-            if save is None or (save and not self.save_file()):
+            save_choice = self.ask_save_changes()
+            if save_choice is None or (save_choice and not self.save_file()):
                 return
         if not self.install_update():
             return
         self.closing = True
+        if self.autosave_job is not None:
+            self.root.after_cancel(self.autosave_job)
+            self.autosave_job = None
+        if save_choice is False:
+            try:
+                os.remove(self.autosave_path)
+            except FileNotFoundError:
+                pass
+            except OSError as ex:
+                self.autosave_status_var.set("Could not remove autosave: %s" % ex)
+        else:
+            self.write_autosave()
         self.stop(quiet=True)
         self.root.destroy()
 
