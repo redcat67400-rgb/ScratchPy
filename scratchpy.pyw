@@ -73,6 +73,12 @@ def version_key(version):
 with open(__file__, "rb") as _source_file:
     APP_VERSION = source_version(_source_file.read(512).decode("utf-8-sig"))
 
+try:                                    # Optional: smooth (anti-aliased) block outlines.
+    from PIL import Image, ImageDraw, ImageTk
+    HAVE_PIL = True
+except Exception:
+    HAVE_PIL = False
+
 # --------------------------------------------------------------------------
 #  High DPI support for Windows
 # --------------------------------------------------------------------------
@@ -209,6 +215,12 @@ def lib_color(name):
 
 
 LIBS = {}   # Module name -> block IDs.
+
+
+def _lighten(h, k=0.14):
+    """Slightly lighter colour (hover effect)."""
+    r, g, b = (int(h[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02X%02X%02X" % tuple(int(c + (255 - c) * k) for c in (r, g, b))
 
 
 def text_on(h):
@@ -623,17 +635,94 @@ def _flat(pts):
     return [c for p in pts for c in p]
 
 
+def _vec(pts, r0=5.0):
+    """Control points of a closed vector outline with rounded corners.
+
+    Each corner becomes three control points (start of the curve, the corner itself, end of the
+    curve); the canvas draws them as true Bezier curves (smooth=True), so the curves stay smooth
+    at every zoom level."""
+    n, out = len(pts), []
+    for i in range(n):
+        (px, py), (x, y), (nx, ny) = pts[i - 1][:2], pts[i][:2], pts[(i + 1) % n][:2]
+        r = pts[i][2] if len(pts[i]) > 2 else r0          # A vertex may carry its own radius.
+        l1, l2 = math.hypot(px - x, py - y), math.hypot(nx - x, ny - y)
+        if l1 < 1e-6 or l2 < 1e-6:
+            out += [x, y]
+            continue
+        d1, d2 = min(2 * r, l1), min(2 * r, l2)     # The curve starts halfway to these points.
+        out += [x + (px - x) / l1 * d1, y + (py - y) / l1 * d1, x, y,
+                x + (nx - x) / l2 * d2, y + (ny - y) / l2 * d2]
+    return out
+
+
+def _hat_pts(x, y, hat=12, a=40, steps=30):
+    """Dome of the 'when clicked' block, like in Scratch: an arc of an ellipse that starts on the
+    left edge (below the top edge of the body), rises to a peak `hat` px above the body and comes
+    back down onto the flat top edge at an angle. y + hat is the top edge of the body."""
+    top = y + hat
+    b = hat / 0.6                       # vertical radius
+    d = b - hat                         # the arc starts d px below the top edge of the body
+    cx, cy = x + a, top + d
+    end = math.asin(d / b)
+    pts = []
+    for k in range(steps + 1):
+        th = math.pi + (end - math.pi) * k / steps
+        pts.append((cx + a * math.cos(th), cy - b * math.sin(th), 0))
+    return pts
+
+
 def _notch_r(x0, y, x1):      # Top edge (inward notch), from left to right.
-    return [(x0 + 14, y), (x0 + 18, y + 4), (x0 + 30, y + 4), (x0 + 34, y), (x1, y)]
+    return [(x0 + 14, y, 2), (x0 + 18, y + 4, 2), (x0 + 30, y + 4, 2), (x0 + 34, y, 2), (x1, y)]
 
 
 def _bump_l(x0, y):           # Bottom edge (outward tab), from right to left.
-    return [(x0 + 34, y), (x0 + 30, y + 4), (x0 + 18, y + 4), (x0 + 14, y), (x0, y)]
+    return [(x0 + 34, y, 2), (x0 + 30, y + 4, 2), (x0 + 18, y + 4, 2), (x0 + 14, y, 2), (x0, y)]
+
+
+def _spline(ctrl, steps=8):
+    """Points of the closed quadratic Bezier outline the canvas draws for smooth=True."""
+    pts = list(zip(ctrl[::2], ctrl[1::2]))
+    if len(pts) > 1 and pts[0] == pts[-1]:      # Some Tk versions return the closing point too.
+        pts.pop()
+    n, out = len(pts), []
+    for i in range(n):
+        p0, p1, p2 = pts[i - 1], pts[i], pts[(i + 1) % n]
+        m0 = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
+        m1 = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+        for k in range(steps):
+            t = k / steps
+            u = 1 - t
+            out.append((u * u * m0[0] + 2 * u * t * p1[0] + t * t * m1[0],
+                        u * u * m0[1] + 2 * u * t * p1[1] + t * t * m1[1]))
+    return out
+
+
+def aa_image(ctrl, fill, outline, width, ss=3):
+    """Anti-aliased picture of a block outline: drawn `ss` times larger, then reduced.
+    Returns (image, x_offset, y_offset, key); the key lets identical shapes share one picture."""
+    pts = _spline(ctrl)
+    pad = int(width) + 2
+    ox = int(math.floor(min(x for x, y in pts))) - pad
+    oy = int(math.floor(min(y for x, y in pts))) - pad
+    rel = [(round((x - ox) * 4) / 4, round((y - oy) * 4) / 4) for x, y in pts]     # Quarter-pixel precision.
+    w = int(math.ceil(max(x for x, y in rel))) + pad
+    h = int(math.ceil(max(y for x, y in rel))) + pad
+    key = (fill, outline, width, w, h, tuple(rel))
+    return rel, w, h, ox, oy, key
+
+
+def aa_render(rel, w, h, fill, outline, width, ss=3):
+    big = Image.new("RGBA", (w * ss, h * ss), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    xy = [(x * ss, y * ss) for x, y in rel]
+    d.polygon(xy, fill=fill)
+    d.line(xy + [xy[0], xy[1]], fill=outline, width=max(1, int(round(width * ss))), joint="curve")
+    return big.resize((w, h), getattr(Image, "Resampling", Image).LANCZOS)
 
 
 class Renderer:
     GAP, PADX, ROWH, FH = 6, 10, 34, 22
-    IND, EMPTY, FOOT, MID, HAT = 24, 22, 24, 28, 14
+    IND, EMPTY, FOOT, MID, HAT = 24, 22, 24, 28, 13
 
     def __init__(self, canvas, font, place_entry=None):
         self.c = canvas
@@ -650,6 +739,14 @@ class Renderer:
         self.snaps = []     # (x, y, list, index, dragging)
         self.slots = []     # (x, y, w, h, parent, index, dragging)
         self.in_drag = False
+        self.polys = []     # (canvas item, fill, outline, width) of every block outline drawn
+
+    def poly(self, ctrl, fill, outline, width):
+        """Draw a block outline as a vector curve (smoothed into an anti-aliased picture later)."""
+        item = self.c.create_polygon(ctrl, smooth=True, splinesteps=12, fill=fill, outline=outline,
+                                     width=width, joinstyle="round", tags="shape")
+        self.polys.append((item, fill, outline, width))
+        return item
 
     def _ol(self, b, dark):
         """Return a thick white outline for selected blocks."""
@@ -749,13 +846,10 @@ class Renderer:
         if b.shape == "bool":
             pts = [x + h / 2, y, x + w - h / 2, y, x + w, y + h / 2,
                    x + w - h / 2, y + h, x + h / 2, y + h, x, y + h / 2]
-            self.c.create_polygon(pts, fill=col, outline=ol, width=wd, tags="shape")
+            self.poly(_vec(list(zip(pts[::2], pts[1::2])), 6), col, ol, wd)
         else:
             r = min(h / 2, 14)
-            pts = [x + r, y, x + w - r, y, x + w, y, x + w, y + r, x + w, y + h - r,
-                   x + w, y + h, x + w - r, y + h, x + r, y + h, x, y + h,
-                   x, y + h - r, x, y + r, x, y]
-            self.c.create_polygon(pts, smooth=True, fill=col, outline=ol, width=wd, tags="shape")
+            self.poly(_vec([(x, y), (x + w, y), (x + w, y + h), (x, y + h)], r), col, ol, wd)
         self._hit(x, y, w, h, b, ctx)
         self.draw_row(b, x + (14 if b.shape == "bool" else 10), y, h)
 
@@ -776,12 +870,11 @@ class Renderer:
         ctx = ("list", L, i)
         if shape in ("stack", "hat"):
             if hat:
-                top = [(x, y + 14), (x + 10, y + 5), (x + 28, y), (x + 62, y),
-                       (x + 84, y + 5), (x + 94, y + 14), (x + W, y + 14)]
+                top = _hat_pts(x, y, hat, min(0.38 * W, 42)) + [(x + W, y + hat)]
             else:
                 top = [(x, y)] + _notch_r(x, y, x + W)
             pts = top + [(x + W, y + Hh)] + _bump_l(x, y + Hh)
-            self.c.create_polygon(_flat(pts), fill=col, outline=ol, width=wd, tags="shape")
+            self.poly(_vec(pts, 5), col, ol, wd)
             self._hit(x, y, W, Hh, b, ctx)
             self.draw_row(b, x + self.PADX, y + hat, Hh - hat)
             return
@@ -800,7 +893,7 @@ class Renderer:
             placed.append((cur, hh, hb, body))
             cur = bb
         pts += [(x + W, cur + self.FOOT)] + _bump_l(x, cur + self.FOOT)
-        self.c.create_polygon(_flat(pts), fill=col, outline=ol, width=wd, tags="shape")
+        self.poly(_vec(pts, 5), col, ol, wd)
         self._hit(x, y, W, Hh, b, ctx)
         self.draw_row(b, x + self.PADX, y, Hh)
         if shape == "celse":
@@ -1093,6 +1186,7 @@ class App:
         self.zfont = tkfont.Font(family=base.actual("family"), size=10, weight="bold")
         self.zefont = tkfont.Font(family=base.actual("family"), size=10)
         self.zoom = 1.0
+        self.aa_ws, self.aa_pal = {}, {}      # Cached smooth block pictures.
         self.scripts = []
         self.saved_state = None
         self.undo_stack = []
@@ -1541,7 +1635,9 @@ class App:
         st.map("TRadiobutton", background=[("active", self.BG2)],
                foreground=[("disabled", self.MUTED)])
 
-        category_labels = set(getattr(self, "cat_labels", {}).values())
+        category_labels = set()
+        for lb in getattr(self, "cat_labels", {}).values():     # Tabs keep their own colours.
+            category_labels.update((lb, getattr(lb, "bar", lb)))
 
         def recolor(parent):
             for widget in parent.winfo_children():
@@ -1888,11 +1984,19 @@ class App:
         for w in self.catf.winfo_children():
             w.destroy()
         self.cat_labels = {}
-        for i, (name, (col, _)) in enumerate(CATS.items()):
-            lb = tk.Label(self.catf, text=name, bg=col, fg=text_on(col), font=self.font,
-                          padx=8, pady=5, cursor="hand2", bd=2, relief="flat")
-            lb.grid(row=i // 3, column=i % 3, sticky="nsew", padx=1, pady=1)
-            lb.bind("<Button-1>", lambda e, n=name: self.show_palette(n))
+        for i, (name, (col, dark)) in enumerate(CATS.items()):
+            cell = tk.Frame(self.catf, bg=self.catf.cget("bg"), cursor="hand2")
+            cell.grid(row=i // 3, column=i % 3, sticky="nsew", padx=3, pady=3)
+            lb = tk.Label(cell, text=name, bg=col, fg=text_on(col), font=self.font, padx=10, pady=6,
+                          cursor="hand2", bd=0, anchor="center")
+            lb.pack(fill="both", expand=True)
+            bar = tk.Frame(cell, height=4, bg=dark)         # Coloured base line; white when selected.
+            bar.pack(fill="x")
+            lb.bar, lb.base, lb.dark = bar, col, dark
+            for w in (cell, lb, bar):
+                w.bind("<Button-1>", lambda e, n=name: self.show_palette(n))
+            lb.bind("<Enter>", lambda e, l=lb: l.configure(bg=_lighten(l.base)))
+            lb.bind("<Leave>", lambda e, l=lb: l.configure(bg=l.base))
             self.cat_labels[name] = lb
         for c in range(3):
             self.catf.grid_columnconfigure(c, weight=1, uniform="category-columns")
@@ -1982,10 +2086,29 @@ class App:
             self.paths.append(d)
         self.import_lib(os.path.splitext(base)[0])
 
+    def antialias(self, canvas, polys, cache):
+        """Replace the block outlines by smooth pictures (needs Pillow; otherwise keep the vectors)."""
+        if not HAVE_PIL or not polys:
+            return
+        if len(cache) > 1500:
+            cache.clear()
+        for item, fill, ol, wd in polys:
+            try:
+                rel, w, h, ox, oy, key = aa_image(canvas.coords(item), fill, ol, wd)
+                photo = cache.get(key)
+                if photo is None:
+                    photo = cache[key] = ImageTk.PhotoImage(aa_render(rel, w, h, fill, ol, wd))
+                img = canvas.create_image(ox, oy, image=photo, anchor="nw", tags="shape")
+            except Exception:
+                return                              # Keep the vector outlines if anything goes wrong.
+            canvas.tag_lower(img, item)
+            canvas.delete(item)
+
     def show_palette(self, cat):
         self.cat = cat
         for n, lb in self.cat_labels.items():
-            lb.configure(relief="sunken" if n == cat else "flat")
+            lb.bar.configure(bg="#FFFFFF" if n == cat else lb.dark, height=4)
+            lb.configure(font=self.font)
         self.pal.delete("all")
         r = self.palr
         r.reset()
@@ -2001,6 +2124,7 @@ class App:
                 h = r.ssize(b)[1]
             y += h + 16
         r.force_ctx = None
+        self.antialias(self.pal, r.polys, self.aa_pal)
         bb = self.pal.bbox("shape")
         self.pal.configure(scrollregion=(0, 0, max(320, (bb[2] if bb else 0) + 20), y + 10))
         self.pal.yview_moveto(0)
@@ -2112,6 +2236,7 @@ class App:
             c.itemconfigure(item, width=float(c.itemcget(item, "width")) * z,
                             height=float(c.itemcget(item, "height")) * z)
             ent.configure(font=self.zefont)
+        self.antialias(c, r.polys, self.aa_ws)
         bb = c.bbox("shape")
         w = max(c.winfo_width(), (bb[2] if bb else 0) + 250)
         h = max(c.winfo_height(), (bb[3] if bb else 0) + 250)
