@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.7
-
+# Version: V26.8
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -46,6 +45,7 @@ import traceback
 import unicodedata
 import urllib.error
 import urllib.request
+import webbrowser
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -1008,6 +1008,55 @@ def last_python_block(text):
 # --------------------------------------------------------------------------
 #  Application
 # --------------------------------------------------------------------------
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.job = None
+        self.window = None
+        self.message = None
+        widget.bind("<Enter>", self.on_enter, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<Destroy>", self.hide, add="+")
+
+    def on_enter(self, event):
+        self.move(self.text, event.x_root + 12, event.y_root + 16)
+
+    def move(self, message, x, y):
+        if message == self.message:
+            if self.window:
+                self.window.geometry("+%d+%d" % (x, y))
+            return
+        self.hide()
+        self.message = message
+        self.job = self.widget.after(450, lambda: self.show(message, x, y))
+
+    def show(self, message, x, y):
+        self.job = None
+        if not self.widget.winfo_exists():
+            return
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.wm_geometry("+%d+%d" % (x, y))
+        tk.Label(self.window, text=message, justify="left", bg="#20242b", fg="white",
+                 padx=7, pady=4, bd=1, relief="solid").pack()
+
+    def hide(self, event=None):
+        if self.job is not None:
+            try:
+                self.widget.after_cancel(self.job)
+            except tk.TclError:
+                pass
+            self.job = None
+        if self.window is not None:
+            try:
+                self.window.destroy()
+            except tk.TclError:
+                pass
+            self.window = None
+        self.message = None
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -1031,6 +1080,8 @@ class App:
                 pass
         
         self.cfg = load_config()
+        saved_path = self.cfg.get("project_path")
+        self.project_path = saved_path if isinstance(saved_path, str) else None
         if "gemini_key" in self.cfg:
             self.cfg.pop("gemini_key")
             save_config(self.cfg)
@@ -1044,6 +1095,11 @@ class App:
         self.zoom = 1.0
         self.scripts = []
         self.saved_state = None
+        self.undo_stack = []
+        self.redo_stack = []
+        self.undo_limit = 100
+        self._edit_undo_before = None
+        self._code_undo_before = None
         app_file = sys.executable if getattr(sys, "frozen", False) else __file__
         self.app_folder = os.path.dirname(os.path.abspath(app_file))
         self.autosave_path = os.path.join(self.app_folder, "save", "autosave.json")
@@ -1084,6 +1140,7 @@ class App:
         self.set_scripts([])          # Start with an empty workspace.
         self.mark_saved()
         self.autosaved_state = self.project_state()
+        self.update_autosave_status()
         
         # Position the split panes after the window is drawn.
         root.after(800, self._init_paned_positions)
@@ -1094,8 +1151,21 @@ class App:
         root.after(1000, self.restore_autosave)
         self.autosave_job = root.after(self.autosave_interval, self.autosave_tick)
 
-    def check_for_updates(self):
-        if sys.platform != "win32" or getattr(sys, "frozen", False) or self.update_checking:
+    def check_for_updates(self, manual=False):
+        if sys.platform != "win32":
+            if manual:
+                messagebox.showinfo("Updates", "Update checks are available on Windows only.",
+                                    parent=self.root)
+            return
+        if getattr(sys, "frozen", False):
+            if manual:
+                messagebox.showinfo("Updates", "Updates are not supported by this packaged build.",
+                                    parent=self.root)
+            return
+        if self.update_checking:
+            if manual:
+                messagebox.showinfo("Updates", "An update check is already in progress.",
+                                    parent=self.root)
             return
         self.update_checking = True
 
@@ -1110,7 +1180,13 @@ class App:
                         response.read(512).decode("utf-8-sig"))
                 remote_key = version_key(remote_version)
                 current_key = version_key(APP_VERSION)
-                if remote_key is None or current_key is None or remote_key <= current_key:
+                if remote_key is None:
+                    raise ValueError("GitHub did not return a valid version number.")
+                if current_key is None:
+                    raise ValueError("This copy does not have a valid version number.")
+                if remote_key <= current_key:
+                    if manual:
+                        self.update_q.put_nowait(("current", None, None, remote_version, None))
                     return
 
                 req = urllib.request.Request(
@@ -1136,9 +1212,14 @@ class App:
                                 "install_scratchpy.py", "exec")
                 except Exception:
                     installer_payload = None
-                self.update_q.put_nowait((payload, installer_payload))
-            except Exception:
-                pass
+                self.update_q.put_nowait(("update", payload, installer_payload,
+                                          remote_version, None))
+            except Exception as ex:
+                if manual:
+                    try:
+                        self.update_q.put_nowait(("error", None, None, None, str(ex)))
+                    except queue.Full:
+                        pass
             finally:
                 self.update_checking = False
 
@@ -1149,18 +1230,51 @@ class App:
         if self.closing:
             return
         try:
-            payload, installer_payload = self.update_q.get_nowait()
+            status, payload, installer_payload, remote_version, error = self.update_q.get_nowait()
         except queue.Empty:
             if self.update_checking:
                 self.root.after(200, self.poll_update)
             return
+        if status == "current":
+            messagebox.showinfo("Updates", "ScratchPy %s is up to date." % APP_VERSION,
+                                parent=self.root)
+            return
+        if status == "error":
+            messagebox.showerror("Updates", "Could not check for updates:\n%s" % error,
+                                 parent=self.root)
+            return
         if messagebox.askyesno(
                 "Update available",
-                "A newer ScratchPy version is available on GitHub. "
-                "Install it now?", parent=self.root):
+                "ScratchPy %s is available. You are using %s. Install the update now?" %
+                (remote_version, APP_VERSION), parent=self.root):
             self.update_payload = payload
             self.update_installer_payload = installer_payload
             self.on_close()
+
+    def show_about(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("About ScratchPy")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        body = ttk.Frame(dialog, padding=18)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="ScratchPy", font=self.font).pack(anchor="w")
+        ttk.Label(body, text="Version %s" % APP_VERSION).pack(anchor="w", pady=(4, 14))
+        actions = ttk.Frame(body)
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Check for updates",
+                   command=lambda: self.check_for_updates(manual=True)).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="GitHub",
+                   command=lambda: webbrowser.open("https://github.com/redcat67400-rgb/ScratchPy")).pack(
+                       side="left", padx=(0, 6))
+        ttk.Button(actions, text="Close", command=dialog.destroy).pack(side="right")
+        ToolTip(actions.winfo_children()[0], "Check GitHub for a newer ScratchPy version")
+        ToolTip(actions.winfo_children()[1], "Open the ScratchPy GitHub repository")
+        dialog.bind("<Escape>", lambda event: dialog.destroy())
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry("+%d+%d" % (max(0, x), max(0, y)))
 
     def install_update(self):
         if self.update_payload is None:
@@ -1238,18 +1352,18 @@ class App:
             return False
 
     def _init_paned_positions(self):
-        """Set initial panel positions based on the screen size."""
+        """Default panel proportions (same layout whatever the screen size):
+        palette 21 %, workspace 51 %, right column 28 %; right column: code 33 %, console 30 %, assistant 37 %."""
         try:
             w = self.main_paned.winfo_width()
             if w > 200:
-                right_width = max(300, int(w * 0.23))
-                self.main_paned.sash_place(0, 320, 0)
-                self.main_paned.sash_place(1, w - right_width, 0)
-            
+                self.main_paned.sash_place(0, int(w * 0.214), 0)
+                self.main_paned.sash_place(1, w - int(w * 0.277), 0)
+
             h = self.right_paned.winfo_height()
             if h > 200:
-                self.right_paned.sash_place(0, 0, int(h / 3))
-                self.right_paned.sash_place(1, 0, int(h * 2 / 3))
+                self.right_paned.sash_place(0, 0, int(h * 0.334))
+                self.right_paned.sash_place(1, 0, int(h * 0.633))
         except Exception:
             pass
 
@@ -1478,24 +1592,40 @@ class App:
         bar = tk.Frame(root, padx=8, pady=6)
         bar.pack(side="top", fill="x")
         tk.Frame(root, height=1, bg=self.BORDER).pack(side="top", fill="x")
+        tips = {"▶ Run": "Run the current program", "■ Stop": "Stop the running program",
+            "Undo": "Undo the last edit (Ctrl+Z)", "Redo": "Redo the last undone edit (Ctrl+Y)",
+            "New": "Create a new project", "Open (.py or project)…": "Open Python or ScratchPy project",
+            "Save": "Save the current project (Ctrl+S)", "Save As…": "Save to a new project file",
+            "Export .py…": "Export the generated Python code", "Import a library…": "Add blocks from a Python library",
+            "Example": "Load an example project"}
         for item in (("▶ Run", self.run), ("■ Stop", self.stop), None,
+              ("Undo", self.undo), ("Redo", self.redo), None,
                   ("New", self.new), ("Open (.py or project)…", self.open_file),
-                  ("Save…", self.save_file), ("Export .py…", self.export_py),
+                  ("Save", self.save_file), ("Save As…", self.save_as),
+                  ("Export .py…", self.export_py),
                   None, ("Import a library…", self.import_lib),
-                  ("Example", self.load_example)):
+              ("Example", self.load_example), None, ("About", self.show_about)):
             if item is None:
                 ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
                 continue
             text, cmd = item
             sty = "Run.TButton" if cmd == self.run else "Stop.TButton" if cmd == self.stop else "TButton"
-            ttk.Button(bar, text=text, command=cmd, style=sty).pack(side="left", padx=2)
+            button = ttk.Button(bar, text=text, command=cmd, style=sty)
+            button.pack(side="left", padx=2)
+            ToolTip(button, tips.get(text, "About ScratchPy"))
         zf = tk.Frame(bar)
         zf.pack(side="right")
         self.zoom_var = tk.StringVar(value="100 %")
-        ttk.Button(zf, text="+", width=3, command=lambda: self.zoom_by(1.25)).pack(side="right", padx=2)
-        ttk.Button(zf, textvariable=self.zoom_var, width=6,
-                   command=lambda: self.set_zoom(1.0)).pack(side="right")
-        ttk.Button(zf, text="−", width=3, command=lambda: self.zoom_by(0.8)).pack(side="right", padx=2)
+        zoom_in = ttk.Button(zf, text="+", width=3, command=lambda: self.zoom_by(1.25))
+        zoom_in.pack(side="right", padx=2)
+        ToolTip(zoom_in, "Zoom in")
+        zoom_reset = ttk.Button(zf, textvariable=self.zoom_var, width=6,
+                                command=lambda: self.set_zoom(1.0))
+        zoom_reset.pack(side="right")
+        ToolTip(zoom_reset, "Reset zoom to 100%")
+        zoom_out = ttk.Button(zf, text="−", width=3, command=lambda: self.zoom_by(0.8))
+        zoom_out.pack(side="right", padx=2)
+        ToolTip(zoom_out, "Zoom out")
         tk.Label(zf, text="Zoom:").pack(side="right", padx=(8, 2))
 
         self.tabs = ttk.Notebook(root)
@@ -1546,7 +1676,9 @@ class App:
         head = tk.Frame(codef)
         head.pack(fill="x")
         tk.Label(head, text="Python code (editable)", font=self.font).pack(side="left", padx=4)
-        ttk.Button(head, text="Copy", command=self.copy_code).pack(side="right", padx=4, pady=2)
+        copy_code_button = ttk.Button(head, text="Copy", command=self.copy_code)
+        copy_code_button.pack(side="right", padx=4, pady=2)
+        ToolTip(copy_code_button, "Copy generated Python code")
         mono = tkfont.nametofont("TkFixedFont")
         self.code_status = tk.Label(codef, text="", anchor="w", justify="left", wraplength=400, font=self.efont)
         self.code_status.pack(side="bottom", fill="x", padx=6)
@@ -1560,6 +1692,11 @@ class App:
         self.code.pack(fill="both", expand=True)
         self.code.tag_configure("errline", background="#5a1d1d")
         self.code.bind("<<Modified>>", self.on_code_modified)
+        code_modifiers = ["Control"] + (["Command"] if sys.platform == "darwin" else [])
+        for modifier in code_modifiers:
+            self.code.bind("<%s-z>" % modifier, self.undo)
+            self.code.bind("<%s-y>" % modifier, self.redo)
+            self.code.bind("<%s-Shift-z>" % modifier, self.redo)
         self.code.bind("<Tab>", self.code_tab)
         self.code.bind("<Return>", self.code_return)
         for seq in ("<Shift-Tab>", "<ISO_Left_Tab>"):
@@ -1583,7 +1720,9 @@ class App:
         ent = ttk.Entry(inp, textvariable=self.in_var)
         ent.pack(side="left", fill="x", expand=True, pady=2)
         ent.bind("<Return>", self.send_input)
-        ttk.Button(inp, text="Send", command=self.send_input).pack(side="left", padx=4)
+        send_button = ttk.Button(inp, text="Send", command=self.send_input)
+        send_button.pack(side="left", padx=4)
+        ToolTip(send_button, "Send input to the running program")
         self.right_paned.add(conf, minsize=110)
 
         # Gemini AI assistant.
@@ -1591,7 +1730,9 @@ class App:
         ai_top = tk.Frame(ai_frame)
         ai_top.pack(fill="x")
         tk.Label(ai_top, text="Gemini AI assistant", font=self.font).pack(side="left", padx=4)
-        ttk.Button(ai_top, text="New chat", command=self.ai_reset).pack(side="right", padx=2)
+        new_chat_button = ttk.Button(ai_top, text="New chat", command=self.ai_reset)
+        new_chat_button.pack(side="right", padx=2)
+        ToolTip(new_chat_button, "Clear the assistant conversation")
         ai_mod = tk.Frame(ai_frame)
         ai_mod.pack(fill="x", pady=2)
         tk.Label(ai_mod, text="Model:").pack(side="left", padx=4)
@@ -1611,6 +1752,7 @@ class App:
         ai_ent.bind("<Return>", self.ask_gemini)
         self.ai_btn = ttk.Button(ai_inp, text="Ask", command=self.ask_gemini)
         self.ai_btn.pack(side="left", padx=4)
+        ToolTip(self.ai_btn, "Send your question to the programming assistant")
         ai_sb = ttk.Scrollbar(ai_frame, orient="vertical")
         ai_sb.pack(side="right", fill="y")
         self.ai_chat = tk.Text(ai_frame, bg=self.EDIT, fg="#d6dae0", font=mono, state="disabled",
@@ -1666,6 +1808,9 @@ class App:
             cv.bind("<ButtonPress-1>", lambda e, s=src: self.on_press(e, s))
             cv.bind("<B1-Motion>", self.on_motion)
             cv.bind("<ButtonRelease-1>", self.on_release)
+        self.palette_tip = ToolTip(self.pal, "")
+        self.pal.bind("<Motion>", self.on_palette_hover, add="+")
+        self.pal.bind("<Leave>", self.palette_tip.hide, add="+")
         for seq in ("<ButtonPress-3>", "<ButtonPress-2>"):
             self.ws.bind(seq, self.on_context)
         mods = ["Control"] + (["Command"] if sys.platform == "darwin" else [])
@@ -1677,6 +1822,9 @@ class App:
                             ("c", self.copy_selected), ("v", self.paste_clip)):
                 for k in (key, key.upper()):
                     self.ws.bind("<%s-%s>" % (m, k), fn)
+            self.root.bind_all("<%s-z>" % m, self.undo, add="+")
+            self.root.bind_all("<%s-y>" % m, self.redo, add="+")
+            self.root.bind_all("<%s-Shift-z>" % m, self.redo, add="+")
         root.bind_all("<Control-MouseWheel>", self.on_zoom_wheel)
         root.bind_all("<Control-Button-4>", self.on_zoom_wheel)
         root.bind_all("<Control-Button-5>", self.on_zoom_wheel)
@@ -1685,6 +1833,8 @@ class App:
         root.bind_all("<Control-Key-0>", lambda e: self.set_zoom(1.0))
         for seq in ("<Control-o>", "<Control-O>"):
             root.bind_all(seq, lambda e: (self.open_file(), "break")[1])
+        for seq in ("<Control-s>", "<Control-S>"):
+            root.bind_all(seq, lambda e: (self.save_file(), "break")[1])
         self.ws.bind("<Configure>", lambda e: self.draw_welcome(), add="+")
         root.bind_all("<MouseWheel>", self.on_wheel)
         root.bind_all("<Button-4>", self.on_wheel)
@@ -1856,6 +2006,15 @@ class App:
         self.pal.yview_moveto(0)
         self.pal.xview_moveto(0)
 
+    def on_palette_hover(self, event):
+        hit = self.palr.find(self.pal.canvasx(event.x), self.pal.canvasy(event.y))
+        if not hit or hit[5][0] != "palette":
+            self.palette_tip.hide()
+            return
+        block = hit[4]
+        self.palette_tip.move("Add block: %s" % block.spec["label"],
+                              event.x_root + 12, event.y_root + 16)
+
     # ---------- script area ----------
     def place_entry(self, b, idx, x, y, w, h):
         key = (b.uid, idx)
@@ -1877,12 +2036,17 @@ class App:
 
     def field_changed(self, b, idx, var):
         if isinstance(b.fields[idx], str):
+            if self._edit_undo_before is None:
+                self._edit_undo_before = self.history_snapshot()
             b.fields[idx] = var.get()
             if self._job is None:
                 self._job = self.root.after_idle(self.refresh)
 
     def refresh(self):
         self._job = None
+        if self._edit_undo_before is not None:
+            before, self._edit_undo_before = self._edit_undo_before, None
+            self.commit_undo(before)
         self.render()
         self.update_code()
 
@@ -1993,6 +2157,10 @@ class App:
     def on_code_modified(self, e=None):
         if not self.code.edit_modified():       # This change came from the program; ignore it.
             return
+        if self._code_undo_before is None:
+            self._code_undo_before = self.history_snapshot()
+            self._code_undo_before["code"] = generate(
+                self.scripts, self.libs, self.paths, self.import_lines)
         self.code.edit_modified(False)
         if self._code_job:
             self.root.after_cancel(self._code_job)
@@ -2036,6 +2204,7 @@ class App:
         try:                                    # Preserve blocks when only whitespace or comments changed.
             if ast.dump(tree) == ast.dump(ast.parse(
                     generate(self.scripts, self.libs, self.paths, self.import_lines))):
+                self._code_undo_before = None
                 return
         except Exception:
             pass
@@ -2044,6 +2213,7 @@ class App:
         except Exception as ex:
             self.set_code_status(ex)
             return
+        undo_before, self._code_undo_before = self._code_undo_before, None
         self.stop_drag()
         self.scripts = [Script(30, 30, [Block("start")] + blocks)]
         self.sel = set()
@@ -2056,6 +2226,7 @@ class App:
             self.build_cats()
             self.show_palette(self.cat if self.cat in CATS else "Control")
         self.render()
+        self.commit_undo(undo_before)
 
     def stop_drag(self):
         self.drag = None
@@ -2177,18 +2348,21 @@ class App:
 
     def delete_selected(self, ev=None):
         roots = self.sel_roots()
+        before = self.history_snapshot() if roots else None
         for b, ctx in roots:
             self.detach(b, ctx)
         self.sel = set()
         self.scripts = [s for s in self.scripts if s.blocks]
         if roots:
             self.refresh()
+            self.commit_undo(before)
         return "break"
 
     def duplicate_selected(self, ev=None):
         groups = self.selection_groups()
         if not groups:
             return "break"
+        before = self.history_snapshot()
         new = set()
         for g in groups:
             clones = [from_dict(to_dict(b)) for b in g["blocks"]]
@@ -2196,6 +2370,7 @@ class App:
             new.update(c.uid for c in clones)
         self.sel = new
         self.refresh()
+        self.commit_undo(before)
         return "break"
 
     def copy_selected(self, ev=None):
@@ -2208,6 +2383,7 @@ class App:
     def paste_clip(self, ev=None):
         if not self.clip:
             return "break"
+        before = self.history_snapshot()
         self.paste_n += 1
         k = 30 * self.paste_n
         try:
@@ -2222,6 +2398,7 @@ class App:
         self.scripts.extend(added)
         self.sel = new
         self.refresh()
+        self.commit_undo(before)
         return "break"
 
     # Mouse-drag selection rectangle.
@@ -2258,13 +2435,15 @@ class App:
         groups = self.selection_groups()
         if not groups:
             return
+        before = self.history_snapshot()
         gx, gy = groups[0]["x"], groups[0]["y"]
         for g in groups:
             g["dx"], g["dy"] = g["x"] - gx, g["y"] - gy
         for b, ctx in self.sel_roots():
             self.detach(b, ctx)
         self.scripts = [s for s in self.scripts if s.blocks]
-        self.drag = {"blocks": groups[0]["blocks"], "off": (cx - gx, cy - gy), "x": gx, "y": gy}
+        self.drag = {"blocks": groups[0]["blocks"], "off": (cx - gx, cy - gy),
+                 "x": gx, "y": gy, "undo_before": before}
         if len(groups) > 1:
             self.drag["group"] = groups
 
@@ -2290,6 +2469,7 @@ class App:
             self.on_motion(e)
             return
         self.sel = set()
+        before = self.history_snapshot()
         if ctx[0] == "palette":
             blocks = [Block(ctx[1])]
         elif ctx[0] == "list":
@@ -2304,7 +2484,8 @@ class App:
             blocks = [b]
             self.scripts.remove(ctx[1])
         self.scripts = [s for s in self.scripts if s.blocks]
-        self.drag = {"blocks": blocks, "off": (cx - x, cy - y), "x": x, "y": y}
+        self.drag = {"blocks": blocks, "off": (cx - x, cy - y), "x": x, "y": y,
+                 "undo_before": before}
         self.on_motion(e)
 
     def on_motion(self, e):
@@ -2428,6 +2609,7 @@ class App:
                 self.sel = set()
             self.scripts = [s for s in self.scripts if s.blocks]
             self.refresh()
+            self.commit_undo(d.get("undo_before"))
             return
         tgt = self.find_target(d) if inside else None
         self.drag = None
@@ -2449,6 +2631,7 @@ class App:
                 self.scripts.append(Script(x, y, blocks))
         self.scripts = [s for s in self.scripts if s.blocks]
         self.refresh()
+        self.commit_undo(d.get("undo_before"))
 
     def on_context(self, e):
         cx, cy = self.ws.canvasx(e.x) / self.zoom, self.ws.canvasy(e.y) / self.zoom
@@ -2467,14 +2650,17 @@ class App:
             return "break"
 
         def dup():
+            before = self.history_snapshot()
             if ctx[0] == "list":
                 clones = [from_dict(to_dict(k)) for k in ctx[1][ctx[2]:]]
             else:
                 clones = [from_dict(to_dict(b))]
             self.scripts.append(Script(x + 30, y + 30, clones))
             self.refresh()
+            self.commit_undo(before)
 
         def delete():
+            before = self.history_snapshot()
             if ctx[0] == "list":
                 ctx[1].pop(ctx[2])
             elif ctx[0] == "slot":
@@ -2483,6 +2669,7 @@ class App:
                 self.scripts.remove(ctx[1])
             self.scripts = [s for s in self.scripts if s.blocks]
             self.refresh()
+            self.commit_undo(before)
 
         menu.add_command(label="Duplicate", command=dup)
         menu.add_command(label="Delete this block", command=delete)
@@ -2492,6 +2679,10 @@ class App:
     # ---------- project ----------
     def set_scripts(self, scripts):
         self.stop()
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+        self._edit_undo_before = None
+        self._code_undo_before = None
         self.scripts = scripts
         self.sel = set()
         self.code_error = None
@@ -2513,11 +2704,98 @@ class App:
     def mark_saved(self):
         self.saved_state = self.project_state()
 
+    def update_autosave_status(self):
+        if not hasattr(self, "autosave_status_var"):
+            return
+        try:
+            modified = os.path.getmtime(self.autosave_path)
+        except OSError:
+            self.autosave_status_var.set("No automatic backup yet")
+            return
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(modified))
+        self.autosave_status_var.set("Last backup: %s" % stamp)
+
+    def autosave_is_newer(self):
+        if not os.path.isfile(self.autosave_path):
+            return False
+        try:
+            backup_time = os.path.getmtime(self.autosave_path)
+            if self.project_path and os.path.isfile(self.project_path):
+                return backup_time > os.path.getmtime(self.project_path)
+            return True
+        except OSError:
+            return False
+
     def project_data(self):
         return {"version": 1, "paths": self.paths, "libs": self.libs,
                 "imports": self.import_lines, "scripts": [
             {"x": s.x, "y": s.y, "blocks": [to_dict(b) for b in s.blocks]}
             for s in self.scripts], "code": self.current_code()}
+
+    def history_snapshot(self):
+        return json.loads(json.dumps(self.project_data(), ensure_ascii=False))
+
+    def commit_undo(self, before):
+        if before is None:
+            return
+        current = self.history_snapshot()
+        if current == before:
+            return
+        self.undo_stack.append(before)
+        del self.undo_stack[:-self.undo_limit]
+        self.redo_stack.clear()
+
+    def restore_history_snapshot(self, snapshot):
+        if self._code_job:                      # A pending code edit must not overwrite the restored state.
+            self.root.after_cancel(self._code_job)
+            self._code_job = None
+        self._edit_undo_before = None
+        self._code_undo_before = None
+        self.stop_drag()
+        for module in list(self.libs):
+            unload_library(module)
+        self.libs = []
+        self.paths = list(snapshot.get("paths", []))
+        for path in self.paths:
+            if path not in sys.path:
+                sys.path.insert(0, path)
+        self.import_lines = list(snapshot.get("imports", []))
+        for module in snapshot.get("libs", []):
+            try:
+                import_library(module)
+            except Exception:
+                continue
+            self.libs.append(module)
+        self.scripts = [
+            Script(item["x"], item["y"], [from_dict(block) for block in item["blocks"]])
+            for item in snapshot.get("scripts", [])
+        ]
+        self.sel = set()
+        code = snapshot.get("code", "")
+        self.code.delete("1.0", "end")
+        self.code.insert("1.0", code)
+        self.code.edit_modified(False)
+        self.code_error = None
+        self.set_code_status(None)
+        self.build_cats()
+        self.show_palette(self.cat if self.cat in CATS else "Control")
+        self.render()
+
+    def undo(self, ev=None):
+        if not self.undo_stack:
+            return "break"
+        self.redo_stack.append(self.history_snapshot())
+        snapshot = self.undo_stack.pop()
+        self.restore_history_snapshot(snapshot)
+        return "break"
+
+    def redo(self, ev=None):
+        if not self.redo_stack:
+            return "break"
+        self.undo_stack.append(self.history_snapshot())
+        snapshot = self.redo_stack.pop()
+        self.restore_history_snapshot(snapshot)
+        return "break"
 
     def write_autosave(self, force=False):
         state = self.project_state()
@@ -2529,7 +2807,9 @@ class App:
             os.makedirs(folder, exist_ok=True)
             fd, temp_path = tempfile.mkstemp(prefix=".autosave-", suffix=".tmp", dir=folder)
             with os.fdopen(fd, "w", encoding="utf-8") as output:
-                json.dump(self.project_data(), output, ensure_ascii=False, indent=1)
+                data = self.project_data()
+                data["_autosave_timestamp"] = time.time()
+                json.dump(data, output, ensure_ascii=False, indent=1)
             os.replace(temp_path, self.autosave_path)
             temp_path = None
         except OSError as ex:
@@ -2540,8 +2820,7 @@ class App:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
         self.autosaved_state = state
-        if hasattr(self, "autosave_status_var"):
-            self.autosave_status_var.set("Project saved automatically")
+        self.update_autosave_status()
         return True
 
     def autosave_tick(self):
@@ -2552,7 +2831,13 @@ class App:
         self.autosave_job = self.root.after(self.autosave_interval, self.autosave_tick)
 
     def restore_autosave(self):
-        if not os.path.isfile(self.autosave_path):
+        if not self.autosave_is_newer():
+            if os.path.isfile(self.autosave_path):
+                try:
+                    os.remove(self.autosave_path)
+                except OSError:
+                    pass
+                self.update_autosave_status()
             return
         if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".py"):
             return
@@ -2561,6 +2846,7 @@ class App:
                 parent=self.root):
             self.open_file(self.autosave_path)
             self.autosaved_state = self.project_state()
+            self.saved_state = None             # Restored work is not saved yet: ask before closing.
         else:
             try:
                 os.remove(self.autosave_path)
@@ -2581,6 +2867,9 @@ class App:
         self.cat = "Control"
         self.search_var.set("")
         self.set_scripts([])
+        self.project_path = None
+        self.cfg.pop("project_path", None)
+        save_config(self.cfg)
         self.mark_saved()
 
     def load_example(self):
@@ -2605,9 +2894,15 @@ class App:
         call = Script(420, 190, [B("start"), B("call", ["greet", '"Scratch"'])])
         self.set_scripts([main, fn, call])
 
-    def save_file(self):
-        path = filedialog.asksaveasfilename(defaultextension=".json",
-                            filetypes=[("ScratchPy project", "*.json")])
+    def save_as(self):
+        return self.save_file(save_as=True)
+
+    def save_file(self, save_as=False):
+        path = self.project_path if not save_as else None
+        if not path or not os.path.isdir(os.path.dirname(path)):
+            path = filedialog.asksaveasfilename(
+                defaultextension=".json", initialfile="ScratchPy project.json",
+                filetypes=[("ScratchPy project", "*.json")])
         if not path:
             return False
         data = self.project_data()
@@ -2618,7 +2913,18 @@ class App:
             messagebox.showerror("Save project", "Could not save the project:\n%s" % ex,
                                  parent=self.root)
             return False
+        self.project_path = os.path.abspath(path)
+        self.cfg["project_path"] = self.project_path
+        save_config(self.cfg)
         self.mark_saved()
+        self.autosaved_state = self.project_state()
+        try:
+            os.remove(self.autosave_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        self.update_autosave_status()
         return True
 
     def open_py(self, path):
@@ -2663,6 +2969,9 @@ class App:
                 if mod not in new_libs:
                     new_libs.append(mod)
         self.set_scripts([Script(30, 30, [Block("start")] + blocks)])
+        self.project_path = None
+        self.cfg.pop("project_path", None)
+        save_config(self.cfg)
         self.mark_saved()
         if new_libs:
             self.search_var.set("")
@@ -2704,6 +3013,11 @@ class App:
             self.code.edit_modified(False)
             self.apply_code()
         self.mark_saved()
+        loaded_path = os.path.abspath(path)
+        if os.path.normcase(loaded_path) != os.path.normcase(os.path.abspath(self.autosave_path)):
+            self.project_path = loaded_path
+            self.cfg["project_path"] = self.project_path
+            save_config(self.cfg)
         self.autosaved_state = self.project_state()
 
     def export_py(self):
