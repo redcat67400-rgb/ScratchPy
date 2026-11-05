@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.8
+# Version: V26.9
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
