@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.9
+# Version: V26.10
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -22,6 +22,7 @@ Usage
 """
 import ast
 import codecs
+import colorsys
 import copy
 import http.client
 import importlib
@@ -48,7 +49,7 @@ import urllib.request
 import webbrowser
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 UPDATE_URL = "https://raw.githubusercontent.com/redcat67400-rgb/ScratchPy/program/scratchpy.pyw"
 INSTALLER_URL = "https://raw.githubusercontent.com/redcat67400-rgb/ScratchPy/program/install_scratchpy.py"
@@ -215,6 +216,65 @@ def lib_color(name):
 
 
 LIBS = {}   # Module name -> block IDs.
+
+
+# Colour themes: "light" / "dark" (neutral) and "<colour>-light" / "<colour>-dark".
+ACCENTS = {"default": None, "red": 0, "green": 140, "yellow": 45, "blue": 215, "purple": 270}
+
+
+def split_theme(name):
+    """'red-dark' -> ('red', 'dark'); 'dark' -> ('default', 'dark'); None when unknown."""
+    if name in ("light", "dark"):
+        return "default", name
+    accent, _, mode = str(name).partition("-")
+    if accent in ACCENTS and accent != "default" and mode in ("light", "dark"):
+        return accent, mode
+    return None
+
+
+def join_theme(accent, mode):
+    return mode if accent == "default" else "%s-%s" % (accent, mode)
+
+
+def _hsl(h, s, l):
+    r, g, b = colorsys.hls_to_rgb((h % 360) / 360.0, l, s)
+    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+
+def theme_palette(name):
+    """All interface colours of a theme."""
+    accent, mode = split_theme(name) or ("default", "dark")
+    hue = ACCENTS[accent]
+    if hue is None:                                              # Neutral themes.
+        if mode == "dark":
+            c = {"BG": "#1e2027", "BG2": "#2b2e38", "EDIT": "#15171c",
+                 "FG": "#e4e6eb", "MUTED": "#9aa0aa", "ACCENT": "#4C97FF",
+                 "BORDER": "#3a3e4a", "PAL": "#262932", "WS": "#1b1d23",
+                 "CONSOLE": "#101216", "CONSOLE_FG": "#d6dae0",
+                 "BUTTON_BORDER": "#596171", "SELECT": "#3b4261", "SASH": "#12141a"}
+        else:
+            c = {"BG": "#f3f5f8", "BG2": "#e5e9ef", "EDIT": "#ffffff",
+                 "FG": "#20242b", "MUTED": "#626b78", "ACCENT": "#2563eb",
+                 "BORDER": "#c5ccd6", "PAL": "#f7f8fa", "WS": "#edf1f5",
+                 "CONSOLE": "#e4e8ed", "CONSOLE_FG": "#20242b",
+                 "BUTTON_BORDER": "#98a2b1", "SELECT": "#cbdcff", "SASH": "#d5dbe3"}
+        return c
+    yellow = accent == "yellow"
+    if mode == "dark":
+        return {"BG": _hsl(hue, .22, .12), "BG2": _hsl(hue, .20, .18), "EDIT": _hsl(hue, .26, .08),
+                "FG": "#eceef2", "MUTED": _hsl(hue, .12, .66),
+                "ACCENT": _hsl(hue, .90 if yellow else .72, .55 if yellow else .62),
+                "BORDER": _hsl(hue, .15, .27), "PAL": _hsl(hue, .20, .15), "WS": _hsl(hue, .24, .10),
+                "CONSOLE": _hsl(hue, .28, .07), "CONSOLE_FG": "#dde0e6",
+                "BUTTON_BORDER": _hsl(hue, .16, .40), "SELECT": _hsl(hue, .35, .30),
+                "SASH": _hsl(hue, .26, .06)}
+    return {"BG": _hsl(hue, .45, .96), "BG2": _hsl(hue, .36, .91), "EDIT": "#ffffff",
+            "FG": _hsl(hue, .30, .13), "MUTED": _hsl(hue, .14, .38),
+            "ACCENT": _hsl(hue, .90 if yellow else .70, .36 if accent in ("yellow", "green") else .44),
+            "BORDER": _hsl(hue, .22, .80), "PAL": _hsl(hue, .45, .975), "WS": _hsl(hue, .42, .94),
+            "CONSOLE": _hsl(hue, .32, .92), "CONSOLE_FG": _hsl(hue, .30, .13),
+            "BUTTON_BORDER": _hsl(hue, .20, .62), "SELECT": _hsl(hue, .85, .86),
+            "SASH": _hsl(hue, .30, .84)}
 
 
 def _lighten(h, k=0.14):
@@ -1500,7 +1560,7 @@ class App:
         """Set the dark theme and use Calibri (or Arial as a fallback)."""
         root = self.root
         self.theme_name = self.cfg.get("theme", "dark")
-        if self.theme_name not in ("light", "dark"):
+        if split_theme(self.theme_name) is None:
             self.theme_name = "dark"
         BG, BG2, EDIT, FG, MUTED, ACCENT, BORDER = (self.BG, self.BG2, self.EDIT, self.FG,
                                                     self.MUTED, self.ACCENT, self.BORDER)
@@ -1566,26 +1626,33 @@ class App:
         return fam, size
 
     def apply_theme(self):
-        dark = self.theme_name == "dark"
-        colors = ({"BG": "#1e2027", "BG2": "#2b2e38", "EDIT": "#15171c",
-                   "FG": "#e4e6eb", "MUTED": "#9aa0aa", "ACCENT": "#4C97FF",
-                   "BORDER": "#3a3e4a", "PAL": "#262932", "WS": "#1b1d23",
-                   "CONSOLE": "#101216", "CONSOLE_FG": "#d6dae0"} if dark else
-                  {"BG": "#f3f5f8", "BG2": "#e5e9ef", "EDIT": "#ffffff",
-                   "FG": "#20242b", "MUTED": "#626b78", "ACCENT": "#2563eb",
-                   "BORDER": "#c5ccd6", "PAL": "#f7f8fa", "WS": "#edf1f5",
-                   "CONSOLE": "#e4e8ed", "CONSOLE_FG": "#20242b"})
-        colors["BUTTON_BORDER"] = "#596171" if dark else "#98a2b1"
+        dark = split_theme(self.theme_name)[1] == "dark"
+        colors = theme_palette(self.theme_name)
         self.theme_colors = colors
         self.BG, self.BG2, self.EDIT = colors["BG"], colors["BG2"], colors["EDIT"]
         self.FG, self.MUTED = colors["FG"], colors["MUTED"]
         self.ACCENT, self.BORDER = colors["ACCENT"], colors["BORDER"]
         self.root.configure(bg=self.BG)
-        for key, value in (("TCombobox*Listbox.background", self.EDIT),
+        self.style_titlebar(self.root)
+        # Defaults for widgets created later (dialogs such as "Import a library", context menus,
+        # drop-down lists): they must follow the current theme, not the one chosen at startup.
+        for key, value in (("Background", self.BG), ("Foreground", self.FG),
+                           ("highlightBackground", self.BG), ("highlightColor", self.ACCENT),
+                           ("Menu.background", self.BG2), ("Menu.foreground", self.FG),
+                           ("Menu.activeBackground", self.ACCENT), ("Menu.activeForeground", "white"),
+                           ("Menu.relief", "flat"), ("Menu.borderWidth", 0),
+                           ("PanedWindow.background", colors["SASH"]),
+                           ("Entry.background", self.EDIT), ("Entry.foreground", self.FG),
+                           ("Entry.insertBackground", self.FG),
+                           ("Entry.selectBackground", colors["SELECT"]),
+                           ("Entry.selectForeground", self.FG),
+                           ("Text.background", self.EDIT), ("Text.foreground", self.FG),
+                           ("Listbox.background", self.EDIT), ("Listbox.foreground", self.FG),
+                           ("TCombobox*Listbox.background", self.EDIT),
                            ("TCombobox*Listbox.foreground", self.FG),
                            ("TCombobox*Listbox.selectBackground", self.ACCENT),
                            ("TCombobox*Listbox.selectForeground", "white")):
-            self.root.option_add("*" + key, value)
+            self.root.option_add("*" + key, value, 80)       # 80 = "interactive": overrides startup defaults
         st = self.style
         st.configure(".", background=self.BG, foreground=self.FG,
                      fieldbackground=self.EDIT, bordercolor=self.BORDER,
@@ -1641,7 +1708,7 @@ class App:
 
         def recolor(parent):
             for widget in parent.winfo_children():
-                if widget in category_labels:
+                if widget in category_labels or getattr(widget, "keep_color", False):
                     continue
                 if isinstance(widget, tk.Frame):
                     widget.configure(bg=self.BG2)
@@ -1657,7 +1724,7 @@ class App:
         recolor(self.root)
         if hasattr(self, "code"):
             self.code.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG,
-                                selectbackground="#3b4261" if dark else "#cbdcff")
+                                selectbackground=colors["SELECT"])
             self.code.tag_configure("errline", background="#5a1d1d" if dark else "#ffe0df")
             self.console.configure(bg=colors["CONSOLE"], fg=colors["CONSOLE_FG"])
             self.console.tag_configure("err", foreground="#ff8a80" if dark else "#b42318")
@@ -1673,13 +1740,14 @@ class App:
                                        foreground="#f5e0dc" if dark else "#30343b")
 
     def set_theme(self, theme):
-        if theme not in ("light", "dark") or theme == self.theme_name:
+        if split_theme(theme) is None or theme == self.theme_name:
             return
         self.theme_name = theme
         self.cfg["theme"] = theme
         save_config(self.cfg)
-        if hasattr(self, "settings_theme_var"):
-            self.settings_theme_var.set(theme)
+        if hasattr(self, "settings_mode_var"):
+            self.settings_accent_var.set(split_theme(theme)[0])
+            self.settings_mode_var.set(split_theme(theme)[1])
         self.apply_theme()
 
     # ---------- interface ----------
@@ -1879,15 +1947,29 @@ class App:
         appearance = ttk.LabelFrame(self.settings_tab, text="Appearance", padding=14)
         appearance.pack(anchor="nw", fill="x")
         ttk.Label(appearance, text="Theme").grid(row=0, column=0, sticky="w", padx=(0, 24))
-        self.settings_theme_var = tk.StringVar(value=self.theme_name)
-        ttk.Radiobutton(appearance, text="Light", value="light",
-                        variable=self.settings_theme_var,
-                        command=lambda: self.set_theme(self.settings_theme_var.get())).grid(
-                            row=0, column=1, sticky="w", padx=6)
-        ttk.Radiobutton(appearance, text="Dark", value="dark",
-                        variable=self.settings_theme_var,
-                        command=lambda: self.set_theme(self.settings_theme_var.get())).grid(
-                            row=0, column=2, sticky="w", padx=6)
+        accent0, mode0 = split_theme(self.theme_name)
+        self.settings_accent_var = tk.StringVar(value=accent0)
+        self.settings_mode_var = tk.StringVar(value=mode0)
+
+        def choose_theme():
+            self.set_theme(join_theme(self.settings_accent_var.get(), self.settings_mode_var.get()))
+
+        ttk.Radiobutton(appearance, text="Light", value="light", variable=self.settings_mode_var,
+                        command=choose_theme).grid(row=0, column=1, sticky="w", padx=6)
+        ttk.Radiobutton(appearance, text="Dark", value="dark", variable=self.settings_mode_var,
+                        command=choose_theme).grid(row=0, column=2, sticky="w", padx=6)
+        ttk.Label(appearance, text="Colour").grid(row=1, column=0, sticky="w", padx=(0, 24), pady=(10, 0))
+        colour_row = ttk.Frame(appearance)
+        colour_row.grid(row=1, column=1, columnspan=6, sticky="w", pady=(10, 0))
+        for accent in ACCENTS:
+            cell = ttk.Frame(colour_row)
+            cell.pack(side="left", padx=(0, 10))
+            swatch = "#8a93a3" if accent == "default" else _hsl(ACCENTS[accent], .72, .55)
+            sw = tk.Frame(cell, width=14, height=14, bg=swatch)
+            sw.keep_color = True                    # The theme recolouring must not touch the swatches.
+            sw.pack(side="left", padx=(0, 4))
+            ttk.Radiobutton(cell, text=accent.capitalize(), value=accent, variable=self.settings_accent_var,
+                            command=choose_theme).pack(side="left")
         autosave_box = ttk.LabelFrame(self.settings_tab, text="Automatic save", padding=14)
         autosave_box.pack(anchor="nw", fill="x", pady=(0, 12))
         ttk.Label(autosave_box, text="Backup file").grid(row=0, column=0, sticky="w", padx=(0, 18))
@@ -2023,6 +2105,58 @@ class App:
         importlib.invalidate_caches()
         return r.returncode == 0, (r.stdout + r.stderr)[-700:]
 
+    def style_titlebar(self, win):
+        """Dark title bar on Windows 10/11 when the dark theme is on (ignored elsewhere)."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            win.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
+            value = ctypes.c_int(1 if split_theme(self.theme_name)[1] == "dark" else 0)
+            for attr in (20, 19):               # DWMWA_USE_IMMERSIVE_DARK_MODE (new and old Windows 10 id)
+                if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(value), 4) == 0:
+                    break
+        except Exception:
+            pass
+
+    def ask_string(self, title, prompt, initial="", show=None):
+        """Small text-entry window that always follows the current theme.
+        Returns the text, or None when cancelled (replaces tkinter's fixed-colour simpledialog)."""
+        dialog = tk.Toplevel(self.root, bg=self.BG)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        result = {"value": None}
+        body = ttk.Frame(dialog, padding=(16, 14, 16, 14))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=prompt, justify="left", wraplength=460).pack(anchor="w")
+        var = tk.StringVar(value=initial)
+        entry = ttk.Entry(body, textvariable=var, width=52, show=show or "")
+        entry.pack(fill="x", pady=(8, 12))
+
+        def finish(ok):
+            result["value"] = var.get() if ok else None
+            dialog.destroy()
+
+        row = ttk.Frame(body)
+        row.pack(anchor="e")
+        ttk.Button(row, text="OK", command=lambda: finish(True)).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Cancel", command=lambda: finish(False)).pack(side="left")
+        dialog.bind("<Return>", lambda e: finish(True))
+        dialog.bind("<Escape>", lambda e: finish(False))
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        self.style_titlebar(dialog)
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_reqwidth()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_reqheight()) // 3
+        dialog.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        entry.focus_set()
+        entry.selection_range(0, "end")
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+        return result["value"]
+
     def try_import(self, name):
         try:
             import_library(name)
@@ -2034,11 +2168,11 @@ class App:
                     "Use scratchpy.py with Python, or rebuild the .exe with "
                     "--hidden-import %s." % (name, name.split(".")[0]))
                 return False
-            pkg = simpledialog.askstring(
+            pkg = self.ask_string(
                 "Library not found",
                 "'%s' is not installed.\nEnter the package name to install with pip "
                 "(leave blank to cancel):" % name,
-                initialvalue=name.split(".")[0], parent=self.root)
+                initial=name.split(".")[0])
             if not pkg or not pkg.strip():
                 return False
             ok, log = self.pip_install(pkg.strip())
@@ -2057,10 +2191,9 @@ class App:
 
     def import_lib(self, name=None):
         if name is None:
-            name = simpledialog.askstring(
+            name = self.ask_string(
                 "Import a library",
-                "Python module name (e.g. math, random, string, os.path, turtle, numpy):",
-                parent=self.root)
+                "Python module name (e.g. math, random, string, os.path, turtle, numpy):")
         if not name or not name.strip():
             return
         name = name.strip()
