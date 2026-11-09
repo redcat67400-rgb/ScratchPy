@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.11
+# Version: V26.12
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -121,7 +121,7 @@ def _items(text):
 
 def spec(t, cat, shape, text, defaults=(), code="", alt=None, fn=None):
     items, n = _items(text)
-    SPECS[t] = dict(cat=cat, shape=shape, items=items, nfields=n,
+    SPECS[t] = dict(cat=cat, shape=shape, items=items, nfields=n, text=text,
                     defaults=list(defaults), code=code, alt=alt, fn=fn,
                     label=" ".join(v for k, v in items if k == "t"))
     ORDER[cat].append(t)
@@ -503,6 +503,623 @@ class Block:
     @property
     def shape(self):
         return SPECS[self.t]["shape"]
+
+
+# --------------------------------------------------------------------------
+# Interface languages
+# --------------------------------------------------------------------------
+LANGUAGES = [("en", "English"), ("fr", "Français"), ("de", "Deutsch"), ("it", "Italiano"),
+             ("ru", "Русский"), ("es", "Español"), ("zh", "中文"), ("ja", "日本語")]
+LANG = "en"
+_I18N, _I18N_PATTERNS = {}, []
+I18N_ROWS = [
+    # ---- toolbar ----
+    ("▶ Run", "▶ Exécuter", "▶ Starten", "▶ Esegui", "▶ Запуск", "▶ Ejecutar", "▶ 运行", "▶ 実行"),
+    ("■ Stop", "■ Arrêter", "■ Stopp", "■ Ferma", "■ Стоп", "■ Detener", "■ 停止", "■ 停止"),
+    ("Undo", "Annuler", "Rückgängig", "Annulla", "Отменить", "Deshacer", "撤销", "元に戻す"),
+    ("Redo", "Rétablir", "Wiederholen", "Ripeti", "Повторить", "Rehacer", "重做", "やり直し"),
+    ("New", "Nouveau", "Neu", "Nuovo", "Новый", "Nuevo", "新建", "新規"),
+    ("Open (.py or project)…", "Ouvrir (.py ou projet)…", "Öffnen (.py oder Projekt)…", "Apri (.py o progetto)…",
+     "Открыть (.py или проект)…", "Abrir (.py o proyecto)…", "打开（.py 或项目）…", "開く（.py またはプロジェクト）…"),
+    ("Save", "Enregistrer", "Speichern", "Salva", "Сохранить", "Guardar", "保存", "保存"),
+    ("Save As…", "Enregistrer sous…", "Speichern unter…", "Salva con nome…", "Сохранить как…", "Guardar como…", "另存为…", "名前を付けて保存…"),
+    ("Export .py…", "Exporter .py…", ".py exportieren…", "Esporta .py…", "Экспорт .py…", "Exportar .py…", "导出 .py…", ".py を書き出し…"),
+    ("Import a library…", "Importer une bibliothèque…", "Bibliothek importieren…", "Importa una libreria…",
+     "Импорт библиотеки…", "Importar una biblioteca…", "导入库…", "ライブラリをインポート…"),
+    ("Recent ▾", "Récents ▾", "Zuletzt ▾", "Recenti ▾", "Недавние ▾", "Recientes ▾", "最近 ▾", "最近 ▾"),
+    ("Examples ▾", "Exemples ▾", "Beispiele ▾", "Esempi ▾", "Примеры ▾", "Ejemplos ▾", "示例 ▾", "サンプル ▾"),
+    ("About", "À propos", "Info", "Informazioni", "О программе", "Acerca de", "关于", "概要"),
+    ("Panels ▾", "Panneaux ▾", "Bereiche ▾", "Pannelli ▾", "Панели ▾", "Paneles ▾", "面板 ▾", "パネル ▾"),
+    ("Zoom:", "Zoom :", "Zoom:", "Zoom:", "Масштаб:", "Zoom:", "缩放：", "ズーム:"),
+    ("Zoom in", "Zoom avant", "Vergrößern", "Ingrandisci", "Увеличить", "Acercar", "放大", "拡大"),
+    ("Zoom out", "Zoom arrière", "Verkleinern", "Riduci", "Уменьшить", "Alejar", "缩小", "縮小"),
+    ("Reset zoom to 100%", "Réinitialiser le zoom à 100 %", "Zoom auf 100 % zurücksetzen", "Reimposta lo zoom al 100%",
+     "Сбросить масштаб до 100%", "Restablecer el zoom al 100 %", "将缩放重置为 100%", "ズームを 100% に戻す"),
+    ("Run the current program", "Exécuter le programme actuel", "Das aktuelle Programm ausführen", "Esegui il programma corrente",
+     "Запустить текущую программу", "Ejecutar el programa actual", "运行当前程序", "現在のプログラムを実行"),
+    ("Stop the running program", "Arrêter le programme en cours", "Das laufende Programm anhalten", "Ferma il programma in esecuzione",
+     "Остановить выполняющуюся программу", "Detener el programa en ejecución", "停止正在运行的程序", "実行中のプログラムを停止"),
+    ("Undo the last edit (Ctrl+Z)", "Annuler la dernière modification (Ctrl+Z)", "Letzte Änderung rückgängig machen (Strg+Z)",
+     "Annulla l'ultima modifica (Ctrl+Z)", "Отменить последнее изменение (Ctrl+Z)", "Deshacer la última edición (Ctrl+Z)",
+     "撤销上一次编辑 (Ctrl+Z)", "直前の編集を元に戻す (Ctrl+Z)"),
+    ("Redo the last undone edit (Ctrl+Y)", "Rétablir la dernière modification annulée (Ctrl+Y)",
+     "Letzte rückgängig gemachte Änderung wiederholen (Strg+Y)", "Ripeti l'ultima modifica annullata (Ctrl+Y)",
+     "Повторить отменённое изменение (Ctrl+Y)", "Rehacer la última edición deshecha (Ctrl+Y)",
+     "重做上一次撤销的编辑 (Ctrl+Y)", "元に戻した編集をやり直す (Ctrl+Y)"),
+    ("Create a new project", "Créer un nouveau projet", "Ein neues Projekt erstellen", "Crea un nuovo progetto",
+     "Создать новый проект", "Crear un proyecto nuevo", "创建新项目", "新しいプロジェクトを作成"),
+    ("Open Python or ScratchPy project", "Ouvrir un fichier Python ou un projet ScratchPy",
+     "Python-Datei oder ScratchPy-Projekt öffnen", "Apri un file Python o un progetto ScratchPy",
+     "Открыть файл Python или проект ScratchPy", "Abrir un archivo Python o un proyecto de ScratchPy",
+     "打开 Python 文件或 ScratchPy 项目", "Python ファイルまたは ScratchPy プロジェクトを開く"),
+    ("Save the current project (Ctrl+S)", "Enregistrer le projet actuel (Ctrl+S)", "Aktuelles Projekt speichern (Strg+S)",
+     "Salva il progetto corrente (Ctrl+S)", "Сохранить текущий проект (Ctrl+S)", "Guardar el proyecto actual (Ctrl+S)",
+     "保存当前项目 (Ctrl+S)", "現在のプロジェクトを保存 (Ctrl+S)"),
+    ("Save to a new project file", "Enregistrer dans un nouveau fichier de projet", "In einer neuen Projektdatei speichern",
+     "Salva in un nuovo file di progetto", "Сохранить в новый файл проекта", "Guardar en un archivo de proyecto nuevo",
+     "保存为新的项目文件", "新しいプロジェクトファイルに保存"),
+    ("Export the generated Python code", "Exporter le code Python généré", "Den erzeugten Python-Code exportieren",
+     "Esporta il codice Python generato", "Экспортировать сгенерированный код Python", "Exportar el código Python generado",
+     "导出生成的 Python 代码", "生成された Python コードを書き出す"),
+    ("Add blocks from a Python library", "Ajouter les blocs d'une bibliothèque Python", "Blöcke aus einer Python-Bibliothek hinzufügen",
+     "Aggiungi i blocchi di una libreria Python", "Добавить блоки из библиотеки Python", "Añadir bloques de una biblioteca de Python",
+     "从 Python 库添加积木", "Python ライブラリのブロックを追加"),
+    ("Reopen a recent file", "Rouvrir un fichier récent", "Eine zuletzt verwendete Datei öffnen", "Riapri un file recente",
+     "Открыть недавний файл", "Reabrir un archivo reciente", "重新打开最近的文件", "最近のファイルを開く"),
+    ("Load a built-in example program", "Charger un programme d'exemple intégré", "Ein integriertes Beispielprogramm laden",
+     "Carica un programma di esempio incluso", "Загрузить встроенный пример программы", "Cargar un programa de ejemplo incluido",
+     "加载内置示例程序", "内蔵のサンプルプログラムを読み込む"),
+    ("Show, hide or reset the panels of the right column", "Afficher, masquer ou réinitialiser les panneaux de la colonne de droite",
+     "Bereiche der rechten Spalte ein-/ausblenden oder zurücksetzen", "Mostra, nascondi o reimposta i pannelli della colonna destra",
+     "Показать, скрыть или сбросить панели правой колонки", "Mostrar, ocultar o restablecer los paneles de la columna derecha",
+     "显示、隐藏或重置右侧栏的面板", "右列のパネルを表示・非表示・リセット"),
+    ("ScratchPy - program in Python with blocks", "ScratchPy - programmer en Python avec des blocs",
+     "ScratchPy – mit Blöcken in Python programmieren", "ScratchPy - programma in Python con i blocchi",
+     "ScratchPy — программирование на Python с помощью блоков", "ScratchPy - programa en Python con bloques",
+     "ScratchPy - 用积木编写 Python 程序", "ScratchPy - ブロックで Python プログラミング"),
+    # ---- palette / categories ----
+    ("Search:", "Recherche :", "Suche:", "Cerca:", "Поиск:", "Buscar:", "搜索：", "検索:"),
+    ("Control", "Contrôle", "Steuerung", "Controllo", "Управление", "Control", "控制", "制御"),
+    ("Output", "Affichage", "Ausgabe", "Output", "Вывод", "Salida", "输出", "出力"),
+    ("Variables", "Variables", "Variablen", "Variabili", "Переменные", "Variables", "变量", "変数"),
+    ("Operators", "Opérateurs", "Operatoren", "Operatori", "Операторы", "Operadores", "运算", "演算"),
+    ("Functions", "Fonctions", "Funktionen", "Funzioni", "Функции", "Funciones", "函数", "関数"),
+    ("Add block: %s", "Ajouter le bloc : %s", "Block hinzufügen: %s", "Aggiungi blocco: %s", "Добавить блок: %s",
+     "Añadir bloque: %s", "添加积木：%s", "ブロックを追加: %s"),
+    # ---- tabs / settings ----
+    ("Workspace", "Espace de travail", "Arbeitsbereich", "Area di lavoro", "Рабочая область", "Área de trabajo", "工作区", "ワークスペース"),
+    ("Settings", "Paramètres", "Einstellungen", "Impostazioni", "Настройки", "Ajustes", "设置", "設定"),
+    ("Appearance", "Apparence", "Darstellung", "Aspetto", "Оформление", "Apariencia", "外观", "外観"),
+    ("Theme", "Thème", "Design", "Tema", "Тема", "Tema", "主题", "テーマ"),
+    ("Light", "Clair", "Hell", "Chiaro", "Светлая", "Claro", "浅色", "ライト"),
+    ("Dark", "Sombre", "Dunkel", "Scuro", "Тёмная", "Oscuro", "深色", "ダーク"),
+    ("Colour", "Couleur", "Farbe", "Colore", "Цвет", "Color", "颜色", "色"),
+    ("Default", "Par défaut", "Standard", "Predefinito", "По умолчанию", "Predeterminado", "默认", "標準"),
+    ("Red", "Rouge", "Rot", "Rosso", "Красный", "Rojo", "红色", "赤"),
+    ("Green", "Vert", "Grün", "Verde", "Зелёный", "Verde", "绿色", "緑"),
+    ("Yellow", "Jaune", "Gelb", "Giallo", "Жёлтый", "Amarillo", "黄色", "黄"),
+    ("Blue", "Bleu", "Blau", "Blu", "Синий", "Azul", "蓝色", "青"),
+    ("Purple", "Violet", "Violett", "Viola", "Фиолетовый", "Morado", "紫色", "紫"),
+    ("Language", "Langue", "Sprache", "Lingua", "Язык", "Idioma", "语言", "言語"),
+    ("Language changed. Restart ScratchPy to apply it.", "Langue modifiée. Redémarre ScratchPy pour l'appliquer.",
+     "Sprache geändert. Starte ScratchPy neu, um sie zu übernehmen.", "Lingua modificata. Riavvia ScratchPy per applicarla.",
+     "Язык изменён. Перезапустите ScratchPy, чтобы применить его.", "Idioma cambiado. Reinicia ScratchPy para aplicarlo.",
+     "语言已更改。请重新启动 ScratchPy 以生效。", "言語を変更しました。反映するには ScratchPy を再起動してください。"),
+    ("Panels (right column)", "Panneaux (colonne de droite)", "Bereiche (rechte Spalte)", "Pannelli (colonna destra)",
+     "Панели (правая колонка)", "Paneles (columna derecha)", "面板（右侧栏）", "パネル（右列）"),
+    ("Python code", "Code Python", "Python-Code", "Codice Python", "Код Python", "Código Python", "Python 代码", "Python コード"),
+    ("Console", "Console", "Konsole", "Console", "Консоль", "Consola", "控制台", "コンソール"),
+    ("AI assistant", "Assistant IA", "KI-Assistent", "Assistente IA", "ИИ-ассистент", "Asistente de IA", "AI 助手", "AI アシスタント"),
+    ("Show all panels in their default order", "Afficher tous les panneaux dans l'ordre par défaut",
+     "Alle Bereiche in der Standardreihenfolge anzeigen", "Mostra tutti i pannelli nell'ordine predefinito",
+     "Показать все панели в порядке по умолчанию", "Mostrar todos los paneles en el orden predeterminado",
+     "按默认顺序显示所有面板", "すべてのパネルを既定の順序で表示"),
+    ("Reset layout", "Réinitialiser la disposition", "Layout zurücksetzen", "Reimposta la disposizione",
+     "Сбросить расположение", "Restablecer la disposición", "重置布局", "レイアウトをリセット"),
+    ("Automatic save", "Sauvegarde automatique", "Automatisches Speichern", "Salvataggio automatico",
+     "Автосохранение", "Guardado automático", "自动保存", "自動保存"),
+    ("Backup file", "Fichier de sauvegarde", "Sicherungsdatei", "File di backup", "Файл резервной копии",
+     "Archivo de copia", "备份文件", "バックアップファイル"),
+    ("Waiting for changes", "En attente de modifications", "Warte auf Änderungen", "In attesa di modifiche",
+     "Ожидание изменений", "Esperando cambios", "等待更改", "変更待ち"),
+    ("No automatic backup yet", "Aucune sauvegarde automatique pour l'instant", "Noch keine automatische Sicherung",
+     "Nessun backup automatico finora", "Автоматических копий пока нет", "Aún no hay copia automática",
+     "尚无自动备份", "自動バックアップはまだありません"),
+    ("Last backup: %s", "Dernière sauvegarde : %s", "Letzte Sicherung: %s", "Ultimo backup: %s", "Последняя копия: %s",
+     "Última copia: %s", "上次备份：%s", "最後のバックアップ: %s"),
+    ("Auto-save failed: %s", "Échec de la sauvegarde automatique : %s", "Automatisches Speichern fehlgeschlagen: %s",
+     "Salvataggio automatico non riuscito: %s", "Не удалось выполнить автосохранение: %s", "Falló el guardado automático: %s",
+     "自动保存失败：%s", "自動保存に失敗しました: %s"),
+    ("Could not remove autosave: %s", "Impossible de supprimer la sauvegarde automatique : %s",
+     "Automatische Sicherung konnte nicht entfernt werden: %s", "Impossibile rimuovere il salvataggio automatico: %s",
+     "Не удалось удалить автосохранение: %s", "No se pudo eliminar el guardado automático: %s",
+     "无法删除自动保存：%s", "自動保存を削除できませんでした: %s"),
+    # ---- panels ----
+    ("Python code (editable)", "Code Python (modifiable)", "Python-Code (bearbeitbar)", "Codice Python (modificabile)",
+     "Код Python (редактируемый)", "Código Python (editable)", "Python 代码（可编辑）", "Python コード（編集可）"),
+    ("Copy", "Copier", "Kopieren", "Copia", "Копировать", "Copiar", "复制", "コピー"),
+    ("Copy generated Python code", "Copier le code Python généré", "Erzeugten Python-Code kopieren", "Copia il codice Python generato",
+     "Копировать сгенерированный код Python", "Copiar el código Python generado", "复制生成的 Python 代码", "生成された Python コードをコピー"),
+    ("✓ Code and blocks are synchronized", "✓ Le code et les blocs sont synchronisés", "✓ Code und Blöcke sind synchron",
+     "✓ Codice e blocchi sono sincronizzati", "✓ Код и блоки синхронизированы", "✓ El código y los bloques están sincronizados",
+     "✓ 代码与积木已同步", "✓ コードとブロックは同期しています"),
+    ("⚠ Error%s: %s\nBlocks will update when the code is valid.", "⚠ Erreur%s : %s\nLes blocs seront mis à jour quand le code sera valide.",
+     "⚠ Fehler%s: %s\nDie Blöcke werden aktualisiert, sobald der Code gültig ist.",
+     "⚠ Errore%s: %s\nI blocchi verranno aggiornati quando il codice sarà valido.",
+     "⚠ Ошибка%s: %s\nБлоки обновятся, когда код станет корректным.",
+     "⚠ Error%s: %s\nLos bloques se actualizarán cuando el código sea válido.",
+     "⚠ 错误%s：%s\n代码有效后积木将更新。", "⚠ エラー%s: %s\nコードが有効になるとブロックが更新されます。"),
+    ("Hide this panel (Panels menu to show it again)", "Masquer ce panneau (menu Panneaux pour le réafficher)",
+     "Diesen Bereich ausblenden (über das Menü Bereiche wieder einblenden)", "Nascondi questo pannello (menu Pannelli per riaprirlo)",
+     "Скрыть эту панель (вернуть через меню «Панели»)", "Ocultar este panel (menú Paneles para volver a mostrarlo)",
+     "隐藏此面板（可在“面板”菜单中重新显示）", "このパネルを隠す（「パネル」メニューで再表示）"),
+    ("Move this panel down", "Descendre ce panneau", "Diesen Bereich nach unten", "Sposta questo pannello in basso",
+     "Переместить панель вниз", "Bajar este panel", "下移此面板", "このパネルを下へ"),
+    ("Move this panel up", "Monter ce panneau", "Diesen Bereich nach oben", "Sposta questo pannello in alto",
+     "Переместить панель вверх", "Subir este panel", "上移此面板", "このパネルを上へ"),
+    ("Minimap", "Mini-carte", "Minikarte", "Minimappa", "Миникарта", "Minimapa", "缩略图", "ミニマップ"),
+    ("Keyboard shortcuts…", "Raccourcis clavier…", "Tastenkürzel…", "Scorciatoie da tastiera…", "Горячие клавиши…",
+     "Atajos de teclado…", "键盘快捷键…", "キーボードショートカット…"),
+    ("Console", "Console", "Konsole", "Console", "Консоль", "Consola", "控制台", "コンソール"),
+    ("Ask AI to fix", "Demander à l'IA de corriger", "KI um Korrektur bitten", "Chiedi all'IA di correggere",
+     "Попросить ИИ исправить", "Pedir a la IA que lo corrija", "让 AI 修复", "AI に修正を依頼"),
+    ("Send the error to the AI assistant", "Envoyer l'erreur à l'assistant IA", "Den Fehler an den KI-Assistenten senden",
+     "Invia l'errore all'assistente IA", "Отправить ошибку ИИ-ассистенту", "Enviar el error al asistente de IA",
+     "将错误发送给 AI 助手", "エラーを AI アシスタントに送る"),
+    ("Input:", "Saisie :", "Eingabe:", "Input:", "Ввод:", "Entrada:", "输入：", "入力:"),
+    ("Send", "Envoyer", "Senden", "Invia", "Отправить", "Enviar", "发送", "送信"),
+    ("Send input to the running program", "Envoyer la saisie au programme en cours", "Eingabe an das laufende Programm senden",
+     "Invia l'input al programma in esecuzione", "Отправить ввод работающей программе", "Enviar la entrada al programa en ejecución",
+     "向正在运行的程序发送输入", "実行中のプログラムに入力を送る"),
+    ("Gemini AI assistant", "Assistant IA Gemini", "Gemini-KI-Assistent", "Assistente IA Gemini", "ИИ-ассистент Gemini",
+     "Asistente de IA Gemini", "Gemini AI 助手", "Gemini AI アシスタント"),
+    ("New chat", "Nouvelle discussion", "Neuer Chat", "Nuova chat", "Новый чат", "Nuevo chat", "新对话", "新しいチャット"),
+    ("Clear the assistant conversation", "Effacer la conversation avec l'assistant", "Die Unterhaltung mit dem Assistenten löschen",
+     "Cancella la conversazione con l'assistente", "Очистить разговор с ассистентом", "Borrar la conversación con el asistente",
+     "清除与助手的对话", "アシスタントとの会話を消去"),
+    ("Model:", "Modèle :", "Modell:", "Modello:", "Модель:", "Modelo:", "模型：", "モデル:"),
+    ("Quick:", "Rapide :", "Schnell:", "Rapido:", "Быстро:", "Rápido:", "快捷：", "クイック:"),
+    ("Explain", "Expliquer", "Erklären", "Spiega", "Объяснить", "Explicar", "解释", "説明"),
+    ("Fix", "Corriger", "Beheben", "Correggi", "Исправить", "Corregir", "修复", "修正"),
+    ("Optimize", "Optimiser", "Optimieren", "Ottimizza", "Оптимизировать", "Optimizar", "优化", "最適化"),
+    ("%s the selected code (or the whole program if nothing is selected)",
+     "%s le code sélectionné (ou tout le programme si rien n'est sélectionné)",
+     "%s den ausgewählten Code (oder das ganze Programm, wenn nichts ausgewählt ist)",
+     "%s il codice selezionato (o l'intero programma se nulla è selezionato)",
+     "%s выделенный код (или всю программу, если ничего не выделено)",
+     "%s el código seleccionado (o todo el programa si no hay selección)",
+     "%s所选代码（未选择时为整个程序）", "%s 選択したコード（未選択なら全体）"),
+    ("Prompt:", "Demande :", "Anfrage:", "Richiesta:", "Запрос:", "Consulta:", "提示：", "プロンプト:"),
+    ("Ask", "Demander", "Fragen", "Chiedi", "Спросить", "Preguntar", "提问", "質問"),
+    ("Send your question to the programming assistant", "Envoyer ta question à l'assistant de programmation",
+     "Deine Frage an den Programmierassistenten senden", "Invia la tua domanda all'assistente di programmazione",
+     "Отправить вопрос ассистенту по программированию", "Enviar tu pregunta al asistente de programación",
+     "将问题发送给编程助手", "プログラミングアシスタントに質問を送る"),
+    ("Hello! I'm ScratchPy's programming assistant (Gemini).\nAsk me for a program, an explanation, or help fixing an error. I can use your current code and console output. Requests are sent to the ScratchPy server.",
+     "Bonjour ! Je suis l'assistant de programmation de ScratchPy (Gemini).\nDemande-moi un programme, une explication ou de l'aide pour corriger une erreur. Je peux utiliser ton code actuel et la sortie de la console. Les requêtes sont envoyées au serveur ScratchPy.",
+     "Hallo! Ich bin der Programmierassistent von ScratchPy (Gemini).\nFrag mich nach einem Programm, einer Erklärung oder Hilfe bei einem Fehler. Ich kann deinen aktuellen Code und die Konsolenausgabe nutzen. Anfragen werden an den ScratchPy-Server gesendet.",
+     "Ciao! Sono l'assistente di programmazione di ScratchPy (Gemini).\nChiedimi un programma, una spiegazione o aiuto per correggere un errore. Posso usare il tuo codice attuale e l'output della console. Le richieste vengono inviate al server di ScratchPy.",
+     "Здравствуйте! Я ассистент по программированию ScratchPy (Gemini).\nПросите у меня программу, объяснение или помощь с исправлением ошибки. Я могу использовать ваш код и вывод консоли. Запросы отправляются на сервер ScratchPy.",
+     "¡Hola! Soy el asistente de programación de ScratchPy (Gemini).\nPídeme un programa, una explicación o ayuda para corregir un error. Puedo usar tu código actual y la salida de la consola. Las solicitudes se envían al servidor de ScratchPy.",
+     "你好！我是 ScratchPy 的编程助手（Gemini）。\n你可以向我索取程序、解释，或让我帮忙修复错误。我可以使用你当前的代码和控制台输出。请求会发送到 ScratchPy 服务器。",
+     "こんにちは！ScratchPy のプログラミングアシスタント（Gemini）です。\nプログラム、説明、エラー修正の手伝いなどを頼んでください。現在のコードとコンソール出力を使えます。リクエストは ScratchPy サーバーに送信されます。"),
+    # ---- welcome ----
+    ("Start your program", "Commence ton programme", "Starte dein Programm", "Inizia il tuo programma", "Начните свою программу",
+     "Empieza tu programa", "开始你的程序", "プログラムを始めましょう"),
+    ("Drag a block from the palette to get started", "Fais glisser un bloc depuis la palette pour commencer",
+     "Ziehe einen Block aus der Palette, um zu beginnen", "Trascina un blocco dalla tavolozza per iniziare",
+     "Перетащите блок из палитры, чтобы начать", "Arrastra un bloque desde la paleta para empezar",
+     "从积木栏拖出一个积木即可开始", "パレットからブロックをドラッグして始めましょう"),
+    ("or press Ctrl + O to open a file", "ou appuie sur Ctrl + O pour ouvrir un fichier", "oder drücke Strg + O, um eine Datei zu öffnen",
+     "oppure premi Ctrl + O per aprire un file", "или нажмите Ctrl + O, чтобы открыть файл", "o pulsa Ctrl + O para abrir un archivo",
+     "或按 Ctrl + O 打开文件", "または Ctrl + O でファイルを開きます"),
+    # ---- find bar / context menus ----
+    ("Find:", "Rechercher :", "Suchen:", "Trova:", "Найти:", "Buscar:", "查找：", "検索:"),
+    ("Close search (Esc)", "Fermer la recherche (Échap)", "Suche schließen (Esc)", "Chiudi la ricerca (Esc)",
+     "Закрыть поиск (Esc)", "Cerrar la búsqueda (Esc)", "关闭搜索 (Esc)", "検索を閉じる (Esc)"),
+    ("Duplicate", "Dupliquer", "Duplizieren", "Duplica", "Дублировать", "Duplicar", "复制一份", "複製"),
+    ("Delete this block", "Supprimer ce bloc", "Diesen Block löschen", "Elimina questo blocco", "Удалить этот блок",
+     "Eliminar este bloque", "删除此积木", "このブロックを削除"),
+    ("Duplicate selection (%d blocks)", "Dupliquer la sélection (%d blocs)", "Auswahl duplizieren (%d Blöcke)",
+     "Duplica la selezione (%d blocchi)", "Дублировать выделение (блоков: %d)", "Duplicar la selección (%d bloques)",
+     "复制所选内容（%d 个积木）", "選択を複製（%d ブロック）"),
+    ("Delete selection", "Supprimer la sélection", "Auswahl löschen", "Elimina la selezione", "Удалить выделение",
+     "Eliminar la selección", "删除所选内容", "選択を削除"),
+    ("Deselect all", "Tout désélectionner", "Auswahl aufheben", "Deseleziona tutto", "Снять выделение",
+     "Deseleccionar todo", "取消全部选择", "選択をすべて解除"),
+    # ---- recent / examples / shortcuts ----
+    ("(no recent files)", "(aucun fichier récent)", "(keine zuletzt verwendeten Dateien)", "(nessun file recente)",
+     "(нет недавних файлов)", "(sin archivos recientes)", "（没有最近的文件）", "（最近のファイルはありません）"),
+    ("Clear the list", "Vider la liste", "Liste leeren", "Svuota l'elenco", "Очистить список", "Vaciar la lista", "清空列表", "リストを消去"),
+    ("Sum and comparison", "Somme et comparaison", "Summe und Vergleich", "Somma e confronto", "Сумма и сравнение",
+     "Suma y comparación", "求和与比较", "合計と比較"),
+    ("Guess the number", "Devine le nombre", "Zahlenraten", "Indovina il numero", "Угадай число", "Adivina el número", "猜数字", "数当てゲーム"),
+    ("Calculator", "Calculatrice", "Taschenrechner", "Calcolatrice", "Калькулятор", "Calculadora", "计算器", "電卓"),
+    ("Multiplication table", "Table de multiplication", "Einmaleins", "Tabellina", "Таблица умножения", "Tabla de multiplicar", "乘法表", "九九の表"),
+    ("FizzBuzz", "FizzBuzz", "FizzBuzz", "FizzBuzz", "FizzBuzz", "FizzBuzz", "FizzBuzz", "FizzBuzz"),
+    ("Greeting function", "Fonction de salutation", "Begrüßungsfunktion", "Funzione di saluto", "Функция приветствия",
+     "Función de saludo", "问候函数", "あいさつ関数"),
+    ("Examples", "Exemples", "Beispiele", "Esempi", "Примеры", "Ejemplos", "示例", "サンプル"),
+    ("Replace the current blocks with the example '%s'?", "Remplacer les blocs actuels par l'exemple « %s » ?",
+     "Aktuelle Blöcke durch das Beispiel „%s“ ersetzen?", "Sostituire i blocchi attuali con l'esempio «%s»?",
+     "Заменить текущие блоки примером «%s»?", "¿Reemplazar los bloques actuales por el ejemplo «%s»?",
+     "用示例“%s”替换当前的积木？", "現在のブロックをサンプル「%s」に置き換えますか？"),
+    ("Could not load the example:\n%s", "Impossible de charger l'exemple :\n%s", "Das Beispiel konnte nicht geladen werden:\n%s",
+     "Impossibile caricare l'esempio:\n%s", "Не удалось загрузить пример:\n%s", "No se pudo cargar el ejemplo:\n%s",
+     "无法加载示例：\n%s", "サンプルを読み込めませんでした:\n%s"),
+    ("Keyboard shortcuts", "Raccourcis clavier", "Tastenkürzel", "Scorciatoie da tastiera", "Горячие клавиши",
+     "Atajos de teclado", "键盘快捷键", "キーボードショートカット"),
+    ("Customizable shortcuts", "Raccourcis personnalisables", "Anpassbare Tastenkürzel", "Scorciatoie personalizzabili",
+     "Настраиваемые сочетания", "Atajos personalizables", "可自定义的快捷键", "カスタマイズ可能なショートカット"),
+    ("Fixed shortcuts", "Raccourcis fixes", "Feste Tastenkürzel", "Scorciatoie fisse", "Фиксированные сочетания",
+     "Atajos fijos", "固定快捷键", "固定のショートカット"),
+    ("Reset to defaults", "Rétablir les valeurs par défaut", "Auf Standard zurücksetzen", "Ripristina i valori predefiniti",
+     "Сбросить по умолчанию", "Restablecer valores predeterminados", "恢复默认", "既定値に戻す"),
+    ("Press a key…", "Appuie sur une touche…", "Taste drücken…", "Premi un tasto…", "Нажмите клавишу…", "Pulsa una tecla…",
+     "请按一个键…", "キーを押してください…"),
+    ("%s is already used by “%s”.", "%s est déjà utilisé par « %s ».", "%s wird bereits von „%s“ verwendet.",
+     "%s è già usato da «%s».", "%s уже используется для «%s».", "%s ya lo usa «%s».", "%s 已被“%s”使用。", "%s は「%s」で既に使われています。"),
+    ("Run the program", "Exécuter le programme", "Programm starten", "Esegui il programma", "Запустить программу",
+     "Ejecutar el programa", "运行程序", "プログラムを実行"),
+    ("Stop the program", "Arrêter le programme", "Programm anhalten", "Ferma il programma", "Остановить программу",
+     "Detener el programa", "停止程序", "プログラムを停止"),
+    ("New project", "Nouveau projet", "Neues Projekt", "Nuovo progetto", "Новый проект", "Proyecto nuevo", "新建项目", "新規プロジェクト"),
+    ("Open a file", "Ouvrir un fichier", "Datei öffnen", "Apri un file", "Открыть файл", "Abrir un archivo", "打开文件", "ファイルを開く"),
+    ("Save the project", "Enregistrer le projet", "Projekt speichern", "Salva il progetto", "Сохранить проект",
+     "Guardar el proyecto", "保存项目", "プロジェクトを保存"),
+    ("Search the workspace", "Rechercher dans l'espace de travail", "Arbeitsbereich durchsuchen", "Cerca nell'area di lavoro",
+     "Поиск в рабочей области", "Buscar en el área de trabajo", "在工作区中搜索", "ワークスペースを検索"),
+    ("Next search result", "Résultat suivant", "Nächster Treffer", "Risultato successivo", "Следующий результат",
+     "Siguiente resultado", "下一个结果", "次の検索結果"),
+    ("Previous search result", "Résultat précédent", "Vorheriger Treffer", "Risultato precedente", "Предыдущий результат",
+     "Resultado anterior", "上一个结果", "前の検索結果"),
+    ("Show the shortcuts", "Afficher les raccourcis", "Tastenkürzel anzeigen", "Mostra le scorciatoie", "Показать сочетания клавиш",
+     "Mostrar los atajos", "显示快捷键", "ショートカットを表示"),
+    ("Undo / redo", "Annuler / rétablir", "Rückgängig / Wiederholen", "Annulla / ripeti", "Отменить / повторить",
+     "Deshacer / rehacer", "撤销 / 重做", "元に戻す / やり直し"),
+    ("Select all blocks", "Sélectionner tous les blocs", "Alle Blöcke auswählen", "Seleziona tutti i blocchi",
+     "Выделить все блоки", "Seleccionar todos los bloques", "选择全部积木", "すべてのブロックを選択"),
+    ("Copy / paste the selected blocks", "Copier / coller les blocs sélectionnés", "Ausgewählte Blöcke kopieren / einfügen",
+     "Copia / incolla i blocchi selezionati", "Копировать / вставить выделенные блоки", "Copiar / pegar los bloques seleccionados",
+     "复制 / 粘贴所选积木", "選択したブロックをコピー / 貼り付け"),
+    ("Duplicate the selected blocks", "Dupliquer les blocs sélectionnés", "Ausgewählte Blöcke duplizieren",
+     "Duplica i blocchi selezionati", "Дублировать выделенные блоки", "Duplicar los bloques seleccionados",
+     "复制所选积木", "選択したブロックを複製"),
+    ("Delete the selected blocks", "Supprimer les blocs sélectionnés", "Ausgewählte Blöcke löschen",
+     "Elimina i blocchi selezionati", "Удалить выделенные блоки", "Eliminar los bloques seleccionados",
+     "删除所选积木", "選択したブロックを削除"),
+    ("Zoom", "Zoom", "Zoom", "Zoom", "Масштаб", "Zoom", "缩放", "ズーム"),
+    # ---- about / updates ----
+    ("About ScratchPy", "À propos de ScratchPy", "Über ScratchPy", "Informazioni su ScratchPy", "О программе ScratchPy",
+     "Acerca de ScratchPy", "关于 ScratchPy", "ScratchPy について"),
+    ("Version %s", "Version %s", "Version %s", "Versione %s", "Версия %s", "Versión %s", "版本 %s", "バージョン %s"),
+    ("Check for updates", "Rechercher des mises à jour", "Nach Updates suchen", "Cerca aggiornamenti", "Проверить обновления",
+     "Buscar actualizaciones", "检查更新", "更新を確認"),
+    ("Check GitHub for a newer ScratchPy version", "Chercher une version plus récente de ScratchPy sur GitHub",
+     "Auf GitHub nach einer neueren ScratchPy-Version suchen", "Cerca su GitHub una versione più recente di ScratchPy",
+     "Проверить на GitHub наличие новой версии ScratchPy", "Buscar en GitHub una versión más reciente de ScratchPy",
+     "在 GitHub 上检查 ScratchPy 新版本", "GitHub で ScratchPy の新しいバージョンを確認"),
+    ("Open the ScratchPy GitHub repository", "Ouvrir le dépôt GitHub de ScratchPy", "Das ScratchPy-GitHub-Repository öffnen",
+     "Apri il repository GitHub di ScratchPy", "Открыть репозиторий ScratchPy на GitHub", "Abrir el repositorio de ScratchPy en GitHub",
+     "打开 ScratchPy 的 GitHub 仓库", "ScratchPy の GitHub リポジトリを開く"),
+    ("Close", "Fermer", "Schließen", "Chiudi", "Закрыть", "Cerrar", "关闭", "閉じる"),
+    ("Updates", "Mises à jour", "Updates", "Aggiornamenti", "Обновления", "Actualizaciones", "更新", "アップデート"),
+    ("Update", "Mise à jour", "Update", "Aggiornamento", "Обновление", "Actualización", "更新", "アップデート"),
+    ("Update available", "Mise à jour disponible", "Update verfügbar", "Aggiornamento disponibile", "Доступно обновление",
+     "Actualización disponible", "有可用更新", "アップデートがあります"),
+    ("ScratchPy %s is available. You are using %s. Install the update now?",
+     "ScratchPy %s est disponible. Tu utilises la version %s. Installer la mise à jour maintenant ?",
+     "ScratchPy %s ist verfügbar. Du verwendest %s. Update jetzt installieren?",
+     "ScratchPy %s è disponibile. Stai usando la %s. Installare ora l'aggiornamento?",
+     "Доступна ScratchPy %s. Вы используете %s. Установить обновление сейчас?",
+     "ScratchPy %s está disponible. Estás usando %s. ¿Instalar la actualización ahora?",
+     "ScratchPy %s 已发布，你正在使用 %s。现在安装更新吗？", "ScratchPy %s が利用可能です（現在 %s）。今すぐ更新しますか？"),
+    ("ScratchPy %s is up to date.", "ScratchPy %s est à jour.", "ScratchPy %s ist auf dem neuesten Stand.",
+     "ScratchPy %s è aggiornato.", "ScratchPy %s — актуальная версия.", "ScratchPy %s está actualizado.",
+     "ScratchPy %s 已是最新版本。", "ScratchPy %s は最新です。"),
+    ("Could not check for updates:\n%s", "Impossible de rechercher les mises à jour :\n%s", "Update-Suche fehlgeschlagen:\n%s",
+     "Impossibile cercare aggiornamenti:\n%s", "Не удалось проверить обновления:\n%s", "No se pudo buscar actualizaciones:\n%s",
+     "无法检查更新：\n%s", "更新を確認できませんでした:\n%s"),
+    ("Update checks are available on Windows only.", "La recherche de mises à jour n'est disponible que sous Windows.",
+     "Die Update-Suche ist nur unter Windows verfügbar.", "La ricerca di aggiornamenti è disponibile solo su Windows.",
+     "Проверка обновлений доступна только в Windows.", "La búsqueda de actualizaciones solo está disponible en Windows.",
+     "仅 Windows 支持检查更新。", "更新の確認は Windows でのみ利用できます。"),
+    ("Updates are not supported by this packaged build.", "Cette version empaquetée ne gère pas les mises à jour.",
+     "Diese gepackte Version unterstützt keine Updates.", "Questa versione pacchettizzata non supporta gli aggiornamenti.",
+     "Эта упакованная сборка не поддерживает обновления.", "Esta versión empaquetada no admite actualizaciones.",
+     "此打包版本不支持更新。", "このパッケージ版は更新に対応していません。"),
+    ("An update check is already in progress.", "Une recherche de mise à jour est déjà en cours.",
+     "Eine Update-Suche läuft bereits.", "Una ricerca di aggiornamenti è già in corso.",
+     "Проверка обновлений уже выполняется.", "Ya hay una búsqueda de actualizaciones en curso.",
+     "已在检查更新。", "更新の確認はすでに実行中です。"),
+    ("Could not start the updater:\n%s", "Impossible de lancer la mise à jour :\n%s", "Der Updater konnte nicht gestartet werden:\n%s",
+     "Impossibile avviare l'aggiornamento:\n%s", "Не удалось запустить обновление:\n%s", "No se pudo iniciar el actualizador:\n%s",
+     "无法启动更新程序：\n%s", "アップデーターを起動できませんでした:\n%s"),
+    ("Could not start the installed updater:\n%s", "Impossible de lancer la mise à jour installée :\n%s",
+     "Der installierte Updater konnte nicht gestartet werden:\n%s", "Impossibile avviare l'aggiornatore installato:\n%s",
+     "Не удалось запустить установленный модуль обновления:\n%s", "No se pudo iniciar el actualizador instalado:\n%s",
+     "无法启动已安装的更新程序：\n%s", "インストール済みのアップデーターを起動できませんでした:\n%s"),
+    # ---- dialogs ----
+    ("OK", "OK", "OK", "OK", "ОК", "Aceptar", "确定", "OK"),
+    ("Cancel", "Annuler", "Abbrechen", "Annulla", "Отмена", "Cancelar", "取消", "キャンセル"),
+    ("Yes", "Oui", "Ja", "Sì", "Да", "Sí", "是", "はい"),
+    ("No", "Non", "Nein", "No", "Нет", "No", "否", "いいえ"),
+    ("Import a library", "Importer une bibliothèque", "Bibliothek importieren", "Importa una libreria", "Импорт библиотеки",
+     "Importar una biblioteca", "导入库", "ライブラリをインポート"),
+    ("Python module name (e.g. math, random, string, os.path, turtle, numpy):",
+     "Nom du module Python (ex. math, random, string, os.path, turtle, numpy) :",
+     "Name des Python-Moduls (z. B. math, random, string, os.path, turtle, numpy):",
+     "Nome del modulo Python (es. math, random, string, os.path, turtle, numpy):",
+     "Имя модуля Python (например, math, random, string, os.path, turtle, numpy):",
+     "Nombre del módulo de Python (p. ej. math, random, string, os.path, turtle, numpy):",
+     "Python 模块名称（例如 math、random、string、os.path、turtle、numpy）：",
+     "Python モジュール名（例: math, random, string, os.path, turtle, numpy）:"),
+    ("Library not found", "Bibliothèque introuvable", "Bibliothek nicht gefunden", "Libreria non trovata", "Библиотека не найдена",
+     "Biblioteca no encontrada", "未找到库", "ライブラリが見つかりません"),
+    ("'%s' is not installed.\nEnter the package name to install with pip (leave blank to cancel):",
+     "« %s » n'est pas installé.\nSaisis le nom du paquet à installer avec pip (laisse vide pour annuler) :",
+     "„%s“ ist nicht installiert.\nGib den Paketnamen für die Installation mit pip ein (leer lassen zum Abbrechen):",
+     "«%s» non è installato.\nInserisci il nome del pacchetto da installare con pip (lascia vuoto per annullare):",
+     "«%s» не установлен.\nВведите имя пакета для установки через pip (оставьте пустым для отмены):",
+     "«%s» no está instalado.\nIntroduce el nombre del paquete para instalar con pip (déjalo vacío para cancelar):",
+     "未安装“%s”。\n请输入要用 pip 安装的包名（留空则取消）：", "「%s」はインストールされていません。\npip でインストールするパッケージ名を入力してください（空欄でキャンセル）:"),
+    ("Import", "Importer", "Importieren", "Importa", "Импорт", "Importar", "导入", "インポート"),
+    ("Could not import '%s':\n%s", "Impossible d'importer « %s » :\n%s", "„%s“ konnte nicht importiert werden:\n%s",
+     "Impossibile importare «%s»:\n%s", "Не удалось импортировать «%s»:\n%s", "No se pudo importar «%s»:\n%s",
+     "无法导入“%s”：\n%s", "「%s」をインポートできませんでした:\n%s"),
+    ("pip", "pip", "pip", "pip", "pip", "pip", "pip", "pip"),
+    ("Installation failed:\n%s", "Échec de l'installation :\n%s", "Installation fehlgeschlagen:\n%s", "Installazione non riuscita:\n%s",
+     "Не удалось установить:\n%s", "Falló la instalación:\n%s", "安装失败：\n%s", "インストールに失敗しました:\n%s"),
+    ("'%s' is not included in this .exe application.\nUse scratchpy.py with Python, or rebuild the .exe with --hidden-import %s.",
+     "« %s » n'est pas inclus dans cette application .exe.\nUtilise scratchpy.py avec Python, ou reconstruis le .exe avec --hidden-import %s.",
+     "„%s“ ist in dieser .exe-Anwendung nicht enthalten.\nVerwende scratchpy.py mit Python oder erstelle die .exe mit --hidden-import %s neu.",
+     "«%s» non è incluso in questa applicazione .exe.\nUsa scratchpy.py con Python oppure ricrea l'.exe con --hidden-import %s.",
+     "«%s» не включён в это приложение .exe.\nИспользуйте scratchpy.py с Python или пересоберите .exe с --hidden-import %s.",
+     "«%s» no está incluido en esta aplicación .exe.\nUsa scratchpy.py con Python o vuelve a compilar el .exe con --hidden-import %s.",
+     "此 .exe 应用程序不包含“%s”。\n请用 Python 运行 scratchpy.py，或使用 --hidden-import %s 重新构建 .exe。",
+     "「%s」はこの .exe アプリに含まれていません。\nPython で scratchpy.py を使うか、--hidden-import %s を付けて .exe をビルドし直してください。"),
+    ("Clear the current project (blocks and imported libraries)?", "Effacer le projet actuel (blocs et bibliothèques importées) ?",
+     "Das aktuelle Projekt (Blöcke und importierte Bibliotheken) löschen?", "Cancellare il progetto corrente (blocchi e librerie importate)?",
+     "Очистить текущий проект (блоки и импортированные библиотеки)?", "¿Borrar el proyecto actual (bloques y bibliotecas importadas)?",
+     "清除当前项目（积木和已导入的库）？", "現在のプロジェクト（ブロックとインポート済みライブラリ）を消去しますか？"),
+    ("Save project", "Enregistrer le projet", "Projekt speichern", "Salva progetto", "Сохранение проекта", "Guardar proyecto", "保存项目", "プロジェクトの保存"),
+    ("Could not save the project:\n%s", "Impossible d'enregistrer le projet :\n%s", "Das Projekt konnte nicht gespeichert werden:\n%s",
+     "Impossibile salvare il progetto:\n%s", "Не удалось сохранить проект:\n%s", "No se pudo guardar el proyecto:\n%s",
+     "无法保存项目：\n%s", "プロジェクトを保存できませんでした:\n%s"),
+    ("Open", "Ouvrir", "Öffnen", "Apri", "Открыть", "Abrir", "打开", "開く"),
+    ("Syntax error in this Python file (line %s):\n%s", "Erreur de syntaxe dans ce fichier Python (ligne %s) :\n%s",
+     "Syntaxfehler in dieser Python-Datei (Zeile %s):\n%s", "Errore di sintassi in questo file Python (riga %s):\n%s",
+     "Синтаксическая ошибка в этом файле Python (строка %s):\n%s", "Error de sintaxis en este archivo de Python (línea %s):\n%s",
+     "此 Python 文件有语法错误（第 %s 行）：\n%s", "この Python ファイルに構文エラーがあります（%s 行目）:\n%s"),
+    ("Could not read the file:\n%s", "Impossible de lire le fichier :\n%s", "Die Datei konnte nicht gelesen werden:\n%s",
+     "Impossibile leggere il file:\n%s", "Не удалось прочитать файл:\n%s", "No se pudo leer el archivo:\n%s",
+     "无法读取文件：\n%s", "ファイルを読み込めませんでした:\n%s"),
+    ("Invalid file:\n%s", "Fichier invalide :\n%s", "Ungültige Datei:\n%s", "File non valido:\n%s", "Недопустимый файл:\n%s",
+     "Archivo no válido:\n%s", "无效文件：\n%s", "無効なファイルです:\n%s"),
+    ("Large file", "Fichier volumineux", "Große Datei", "File di grandi dimensioni", "Большой файл", "Archivo grande", "大文件", "大きなファイル"),
+    ("This file will create more than 2,500 blocks and may be slow. Continue?",
+     "Ce fichier créera plus de 2 500 blocs et peut être lent. Continuer ?",
+     "Diese Datei erzeugt mehr als 2.500 Blöcke und kann langsam sein. Fortfahren?",
+     "Questo file creerà più di 2.500 blocchi e potrebbe essere lento. Continuare?",
+     "Этот файл создаст более 2 500 блоков и может работать медленно. Продолжить?",
+     "Este archivo creará más de 2.500 bloques y puede ser lento. ¿Continuar?",
+     "此文件将创建超过 2,500 个积木，可能较慢。继续吗？", "このファイルは 2,500 個を超えるブロックを作成し、動作が遅くなる可能性があります。続行しますか？"),
+    ("Local module", "Module local", "Lokales Modul", "Modulo locale", "Локальный модуль", "Módulo local", "本地模块", "ローカルモジュール"),
+    ("This file imports '%s', a module located beside it.\nCreating its blocks will execute it in the editor. Continue?",
+     "Ce fichier importe « %s », un module situé à côté.\nCréer ses blocs l'exécutera dans l'éditeur. Continuer ?",
+     "Diese Datei importiert „%s“, ein Modul im selben Ordner.\nDas Erstellen seiner Blöcke führt es im Editor aus. Fortfahren?",
+     "Questo file importa «%s», un modulo che si trova accanto.\nCreare i suoi blocchi lo eseguirà nell'editor. Continuare?",
+     "Этот файл импортирует «%s» — модуль, лежащий рядом.\nСоздание его блоков выполнит его в редакторе. Продолжить?",
+     "Este archivo importa «%s», un módulo situado junto a él.\nCrear sus bloques lo ejecutará en el editor. ¿Continuar?",
+     "此文件导入了同目录下的模块“%s”。\n创建其积木会在编辑器中执行该模块。继续吗？",
+     "このファイルは隣にあるモジュール「%s」をインポートしています。\nブロックを作成するとエディターで実行されます。続行しますか？"),
+    ("Drop a Python (.py) file or a ScratchPy project (.json).", "Dépose un fichier Python (.py) ou un projet ScratchPy (.json).",
+     "Ziehe eine Python-Datei (.py) oder ein ScratchPy-Projekt (.json) hierher.", "Trascina un file Python (.py) o un progetto ScratchPy (.json).",
+     "Перетащите файл Python (.py) или проект ScratchPy (.json).", "Suelta un archivo de Python (.py) o un proyecto de ScratchPy (.json).",
+     "请拖入 Python (.py) 文件或 ScratchPy 项目 (.json)。", "Python (.py) ファイルまたは ScratchPy プロジェクト (.json) をドロップしてください。"),
+    ("Restore autosave?", "Restaurer la sauvegarde automatique ?", "Automatische Sicherung wiederherstellen?",
+     "Ripristinare il salvataggio automatico?", "Восстановить автосохранение?", "¿Restaurar el guardado automático?",
+     "恢复自动保存？", "自動保存を復元しますか？"),
+    ("An automatically saved project was found. Restore it?", "Un projet sauvegardé automatiquement a été trouvé. Le restaurer ?",
+     "Ein automatisch gespeichertes Projekt wurde gefunden. Wiederherstellen?", "È stato trovato un progetto salvato automaticamente. Ripristinarlo?",
+     "Найден автоматически сохранённый проект. Восстановить его?", "Se encontró un proyecto guardado automáticamente. ¿Restaurarlo?",
+     "发现了自动保存的项目。是否恢复？", "自動保存されたプロジェクトが見つかりました。復元しますか？"),
+    ("Save changes?", "Enregistrer les modifications ?", "Änderungen speichern?", "Salvare le modifiche?", "Сохранить изменения?",
+     "¿Guardar los cambios?", "保存更改？", "変更を保存しますか？"),
+    ("Do you want to save your changes before closing?", "Veux-tu enregistrer tes modifications avant de fermer ?",
+     "Möchtest du deine Änderungen vor dem Schließen speichern?", "Vuoi salvare le modifiche prima di chiudere?",
+     "Сохранить изменения перед закрытием?", "¿Quieres guardar los cambios antes de cerrar?",
+     "关闭前要保存更改吗？", "閉じる前に変更を保存しますか？"),
+    ("Review the suggested changes", "Vérifier les modifications proposées", "Vorgeschlagene Änderungen prüfen",
+     "Controlla le modifiche suggerite", "Проверьте предложенные изменения", "Revisa los cambios sugeridos",
+     "查看建议的更改", "提案された変更を確認"),
+    ("Lines in red will be removed, lines in green will be added.", "Les lignes en rouge seront supprimées, celles en vert seront ajoutées.",
+     "Rote Zeilen werden entfernt, grüne Zeilen werden hinzugefügt.", "Le righe in rosso verranno rimosse, quelle in verde aggiunte.",
+     "Красные строки будут удалены, зелёные — добавлены.", "Las líneas en rojo se eliminarán y las verdes se añadirán.",
+     "红色行将被删除，绿色行将被添加。", "赤い行は削除され、緑の行は追加されます。"),
+    ("Apply", "Appliquer", "Anwenden", "Applica", "Применить", "Aplicar", "应用", "適用"),
+    ("The suggested code is identical to your code.", "Le code proposé est identique au tien.", "Der vorgeschlagene Code ist identisch mit deinem.",
+     "Il codice suggerito è identico al tuo.", "Предложенный код совпадает с вашим.", "El código sugerido es idéntico al tuyo.",
+     "建议的代码与你的代码相同。", "提案されたコードは現在のコードと同じです。"),
+    ("GitHub", "GitHub", "GitHub", "GitHub", "GitHub", "GitHub", "GitHub", "GitHub"),
+    ("ScratchPy", "ScratchPy", "ScratchPy", "ScratchPy", "ScratchPy", "ScratchPy", "ScratchPy", "ScratchPy"),
+]
+
+# Block templates ("{}" marks a field). Same number of "{}" in every language.
+I18N_BLOCKS = [
+    ("when ▶ clicked", "quand ▶ cliqué", "Wenn ▶ angeklickt", "quando si clicca ▶", "когда нажат ▶", "al hacer clic en ▶", "当 ▶ 被点击", "▶ が押されたとき"),
+    ("repeat {} times", "répéter {} fois", "wiederhole {} Mal", "ripeti {} volte", "повторить {} раз", "repetir {} veces", "重复 {} 次", "{} 回繰り返す"),
+    ("for {} in {}", "pour {} dans {}", "für {} in {}", "per {} in {}", "для {} в {}", "para {} en {}", "对于 {} 在 {} 中", "{} を {} で繰り返す"),
+    ("while {}", "tant que {}", "solange {}", "finché {}", "пока {}", "mientras {}", "当 {}", "{} の間"),
+    ("forever", "indéfiniment", "für immer", "per sempre", "всегда", "para siempre", "重复执行", "ずっと"),
+    ("if {} then", "si {} alors", "falls {} dann", "se {} allora", "если {} то", "si {} entonces", "如果 {} 那么", "もし {} なら"),
+    ("else if {} then", "sinon si {} alors", "sonst falls {} dann", "altrimenti se {} allora", "иначе если {} то", "si no, si {} entonces", "否则如果 {} 那么", "そうでなくもし {} なら"),
+    ("else", "sinon", "sonst", "altrimenti", "иначе", "si no", "否则", "そうでなければ"),
+    ("break loop", "quitter la boucle", "Schleife verlassen", "esci dal ciclo", "прервать цикл", "salir del bucle", "跳出循环", "ループを抜ける"),
+    ("next iteration", "itération suivante", "nächster Durchlauf", "iterazione successiva", "следующая итерация", "siguiente iteración", "下一次循环", "次の繰り返しへ"),
+    ("wait {} seconds", "attendre {} secondes", "warte {} Sekunden", "aspetta {} secondi", "ждать {} сек.", "esperar {} segundos", "等待 {} 秒", "{} 秒待つ"),
+    ("# {}", "# {}", "# {}", "# {}", "# {}", "# {}", "# {}", "# {}"),
+    ("print {}", "afficher {}", "ausgeben {}", "stampa {}", "вывести {}", "mostrar {}", "打印 {}", "{} を表示"),
+    ("print {} without newline", "afficher {} sans retour à la ligne", "{} ohne Zeilenumbruch ausgeben", "stampa {} senza andare a capo",
+     "вывести {} без перевода строки", "mostrar {} sin salto de línea", "打印 {}（不换行）", "{} を改行せずに表示"),
+    ("ask {}", "demander {}", "frage {}", "chiedi {}", "спросить {}", "preguntar {}", "询问 {}", "{} と尋ねる"),
+    ("ask for a number {}", "demander un nombre {}", "frage nach einer Zahl {}", "chiedi un numero {}", "спросить число {}",
+     "preguntar un número {}", "询问一个数字 {}", "数を尋ねる {}"),
+    ("set {} to {}", "mettre {} à {}", "setze {} auf {}", "imposta {} a {}", "присвоить {} значение {}", "poner {} a {}", "将 {} 设为 {}", "{} を {} にする"),
+    ("add {} to {}", "ajouter {} à {}", "addiere {} zu {}", "aggiungi {} a {}", "добавить {} к {}", "sumar {} a {}", "将 {} 加到 {}", "{} を {} に加える"),
+    ("variable {}", "variable {}", "Variable {}", "variabile {}", "переменная {}", "variable {}", "变量 {}", "変数 {}"),
+    ("create list {} with {}", "créer la liste {} avec {}", "erstelle Liste {} mit {}", "crea lista {} con {}", "создать список {} из {}",
+     "crear lista {} con {}", "创建列表 {}，内容 {}", "リスト {} を {} で作る"),
+    ("append {} to list {}", "ajouter {} à la liste {}", "hänge {} an Liste {} an", "aggiungi {} alla lista {}", "добавить {} в список {}",
+     "añadir {} a la lista {}", "将 {} 追加到列表 {}", "{} をリスト {} の末尾に追加"),
+    ("set item {} of {} to {}", "mettre l'élément {} de {} à {}", "setze Element {} von {} auf {}", "imposta l'elemento {} di {} a {}",
+     "присвоить элементу {} списка {} значение {}", "poner el elemento {} de {} a {}", "将第 {} 项（列表 {}）设为 {}", "{} 番目（リスト {}）を {} にする"),
+    ("item {} of {}", "élément {} de {}", "Element {} von {}", "elemento {} di {}", "элемент {} из {}", "elemento {} de {}", "第 {} 项（列表 {}）", "{} 番目（リスト {}）"),
+    ("length of {}", "longueur de {}", "Länge von {}", "lunghezza di {}", "длина {}", "longitud de {}", "{} 的长度", "{} の長さ"),
+    ("{} modulo {}", "{} modulo {}", "{} modulo {}", "{} modulo {}", "{} по модулю {}", "{} módulo {}", "{} 除以 {} 的余数", "{} を {} で割った余り"),
+    ("{} div {}", "{} div {}", "{} div {}", "{} div {}", "{} div {}", "{} div {}", "{} 整除 {}", "{} ÷ {}（整数）"),
+    ("{} to the power of {}", "{} puissance {}", "{} hoch {}", "{} elevato a {}", "{} в степени {}", "{} elevado a {}", "{} 的 {} 次方", "{} の {} 乗"),
+    ("random integer from {} to {}", "entier aléatoire de {} à {}", "Zufallszahl von {} bis {}", "intero casuale da {} a {}",
+     "случайное целое от {} до {}", "entero aleatorio de {} a {}", "从 {} 到 {} 的随机整数", "{} から {} までの乱数"),
+    ("round {}", "arrondir {}", "runde {}", "arrotonda {}", "округлить {}", "redondear {}", "四舍五入 {}", "{} を丸める"),
+    ("square root of {}", "racine carrée de {}", "Quadratwurzel von {}", "radice quadrata di {}", "квадратный корень из {}",
+     "raíz cuadrada de {}", "{} 的平方根", "{} の平方根"),
+    ("absolute value of {}", "valeur absolue de {}", "Betrag von {}", "valore assoluto di {}", "модуль {}", "valor absoluto de {}", "{} 的绝对值", "{} の絶対値"),
+    ("join {} {}", "assembler {} {}", "verbinde {} {}", "unisci {} {}", "соединить {} {}", "unir {} {}", "连接 {} {}", "{} と {} を結合"),
+    ("string of {}", "texte de {}", "Text von {}", "stringa di {}", "строка из {}", "texto de {}", "{} 转为文本", "{} を文字列に"),
+    ("integer of {}", "entier de {}", "Ganzzahl von {}", "intero di {}", "целое из {}", "entero de {}", "{} 转为整数", "{} を整数に"),
+    ("float of {}", "décimal de {}", "Kommazahl von {}", "decimale di {}", "дробное из {}", "decimal de {}", "{} 转为小数", "{} を小数に"),
+    ("{} and {}", "{} et {}", "{} und {}", "{} e {}", "{} и {}", "{} y {}", "{} 并且 {}", "{} かつ {}"),
+    ("{} or {}", "{} ou {}", "{} oder {}", "{} o {}", "{} или {}", "{} o {}", "{} 或者 {}", "{} または {}"),
+    ("not {}", "non {}", "nicht {}", "non {}", "не {}", "no {}", "非 {}", "{} ではない"),
+    ("{} in {}", "{} dans {}", "{} in {}", "{} in {}", "{} в {}", "{} en {}", "{} 在 {} 中", "{} が {} に含まれる"),
+    ("define {} ({})", "définir {} ({})", "definiere {} ({})", "definisci {} ({})", "определить {} ({})", "definir {} ({})", "定义 {} ({})", "{} ({}) を定義"),
+    ("call {} ({})", "appeler {} ({})", "rufe {} ({}) auf", "chiama {} ({})", "вызвать {} ({})", "llamar a {} ({})", "调用 {} ({})", "{} ({}) を呼ぶ"),
+    ("result of {} ({})", "résultat de {} ({})", "Ergebnis von {} ({})", "risultato di {} ({})", "результат {} ({})", "resultado de {} ({})", "{} ({}) 的结果", "{} ({}) の結果"),
+    ("return {}", "retourner {}", "gib {} zurück", "restituisci {}", "вернуть {}", "devolver {}", "返回 {}", "{} を返す"),
+    ("Python line {}", "ligne Python {}", "Python-Zeile {}", "riga Python {}", "строка Python {}", "línea de Python {}", "Python 行 {}", "Python 行 {}"),
+    ("Python block {}", "bloc Python {}", "Python-Block {}", "blocco Python {}", "блок Python {}", "bloque de Python {}", "Python 块 {}", "Python ブロック {}"),
+    ("Python expression {}", "expression Python {}", "Python-Ausdruck {}", "espressione Python {}", "выражение Python {}", "expresión de Python {}", "Python 表达式 {}", "Python 式 {}"),
+]
+
+
+_LANGUAGE_NOTICE = {}
+_LANGUAGE_NOTICE.update({c: I18N_ROWS[[r[0] for r in I18N_ROWS].index(
+    "Language changed. Restart ScratchPy to apply it.")][i] for i, (c, _) in enumerate(LANGUAGES) if i})
+_LANGUAGE_NOTICE["en"] = "Language changed. Restart ScratchPy to apply it."
+
+
+def set_language(code):
+    """Select the interface language (call before building the window)."""
+    global LANG
+    codes = [c for c, _ in LANGUAGES]
+    LANG = code if code in codes else "en"
+    _I18N.clear()
+    _I18N_PATTERNS.clear()
+    if LANG == "en":
+        return
+    col = codes.index(LANG)
+    for row in I18N_ROWS + I18N_BLOCKS:
+        _I18N[row[0]] = row[col]
+    for key, value in _I18N.items():
+        if "%s" in key or "%d" in key:
+            pat = re.escape(key).replace("%s", "(.*?)").replace("%d", "(\\d+)")
+            _I18N_PATTERNS.append((re.compile(pat, re.S), value))
+
+
+def tr(text):
+    """Translate a user-interface string (strings with %s / %d placeholders also work once formatted)."""
+    if LANG == "en" or not isinstance(text, str) or not text:
+        return text
+    hit = _I18N.get(text)
+    if hit is not None:
+        return hit
+    for rx, value in _I18N_PATTERNS:
+        m = rx.fullmatch(text)
+        if m:
+            groups = iter(tr(g) for g in m.groups())
+            return re.sub(r"%[sd]", lambda _: next(groups), value)
+    return text
+
+
+def apply_block_language():
+    """Show the block labels in the selected language (the generated Python is never affected)."""
+    for sp in SPECS.values():
+        text = sp.get("text")
+        if not text:
+            continue
+        items, n = _items(tr(text) if LANG != "en" else text)
+        if n == sp["nfields"]:
+            sp["items"] = items
+        sp["tlabel"] = " ".join(v for k, v in items if k == "t")
+
+
+def install_i18n():
+    """Translate every widget, menu entry, title and message box created from now on."""
+    if LANG == "en":
+        return
+    orig_init = tk.BaseWidget.__init__
+
+    def init(self, master, widgetName, cnf={}, kw={}, extra=()):
+        for d in (cnf, kw):
+            if isinstance(d, dict) and isinstance(d.get("text"), str):
+                d["text"] = tr(d["text"])
+        orig_init(self, master, widgetName, cnf, kw, extra)
+    tk.BaseWidget.__init__ = init
+
+    orig_conf = tk.Misc.configure
+
+    def configure(self, cnf=None, **kw):
+        if isinstance(kw.get("text"), str):
+            kw["text"] = tr(kw["text"])
+        if isinstance(cnf, dict) and isinstance(cnf.get("text"), str):
+            cnf = dict(cnf, text=tr(cnf["text"]))
+        return orig_conf(self, cnf, **kw)
+    tk.Misc.configure = tk.Misc.config = configure
+
+    orig_add = tk.Menu.add
+
+    def add(self, itemType, cnf={}, **kw):
+        if isinstance(cnf, dict) and isinstance(cnf.get("label"), str):     # add_command passes a dict.
+            cnf = dict(cnf, label=tr(cnf["label"]))
+        if isinstance(kw.get("label"), str):
+            kw["label"] = tr(kw["label"])
+        return orig_add(self, itemType, cnf, **kw)
+    tk.Menu.add = add
+
+    orig_nb_add = ttk.Notebook.add
+
+    def nb_add(self, child, **kw):
+        if isinstance(kw.get("text"), str):
+            kw["text"] = tr(kw["text"])
+        return orig_nb_add(self, child, **kw)
+    ttk.Notebook.add = nb_add
+
+    orig_title = tk.Wm.wm_title
+
+    def title(self, string=None):
+        return orig_title(self, tr(string) if isinstance(string, str) else string)
+    tk.Wm.wm_title = tk.Wm.title = title
+
+    orig_set = tk.StringVar.set
+
+    def var_set(self, value):
+        return orig_set(self, tr(value) if isinstance(value, str) else value)
+    tk.StringVar.set = var_set
+
+    for name in ("showinfo", "showwarning", "showerror", "askyesno", "askokcancel",
+                 "askretrycancel", "askyesnocancel", "askquestion"):
+        fn = getattr(messagebox, name, None)
+        if fn is None:
+            continue
+
+        def wrapper(*a, _fn=fn, **kw):
+            a = [tr(x) if isinstance(x, str) else x for x in a]
+            for k in ("title", "message"):
+                if isinstance(kw.get(k), str):
+                    kw[k] = tr(kw[k])
+            return _fn(*a, **kw)
+        setattr(messagebox, name, wrapper)
 
 
 class Script:
@@ -2439,6 +3056,14 @@ class App:
             sw.pack(side="left", padx=(0, 4))
             ttk.Radiobutton(cell, text=accent.capitalize(), value=accent, variable=self.settings_accent_var,
                             command=choose_theme).pack(side="left")
+        language_box = ttk.LabelFrame(self.settings_tab, text="Language", padding=14)
+        language_box.pack(anchor="nw", fill="x", pady=(12, 0))
+        names = [n for _, n in LANGUAGES]
+        self.language_var = tk.StringVar(value=dict(LANGUAGES).get(LANG, "English"))
+        language_combo = ttk.Combobox(language_box, textvariable=self.language_var, values=names,
+                                      state="readonly", width=18)
+        language_combo.pack(side="left")
+        language_combo.bind("<<ComboboxSelected>>", self.choose_language)
         panels_box = ttk.LabelFrame(self.settings_tab, text="Panels (right column)", padding=14)
         panels_box.pack(anchor="nw", fill="x", pady=(12, 0))
         self.panel_vars = {}
@@ -2456,7 +3081,7 @@ class App:
         ttk.Label(autosave_box, text="Backup file").grid(row=0, column=0, sticky="w", padx=(0, 18))
         ttk.Label(autosave_box, text=os.path.join("save", "autosave.json")).grid(
             row=0, column=1, sticky="w")
-        self.autosave_status_var = tk.StringVar(value="Waiting for changes")
+        self.autosave_status_var = tk.StringVar(value=tr("Waiting for changes"))
         ttk.Label(autosave_box, textvariable=self.autosave_status_var).grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
@@ -2569,7 +3194,8 @@ class App:
         if not q:
             return ORDER[cat]
         return [t for c in ORDER for t in ORDER[c]
-                if q in SPECS[t]["label"].lower() or q in t.lower()]
+                if q in SPECS[t]["label"].lower() or q in t.lower()
+                        or q in SPECS[t].get("tlabel", "").lower()]
 
     def pip_install(self, pkg):
         self.root.configure(cursor="watch")
@@ -2748,7 +3374,7 @@ class App:
             self.palette_tip.hide()
             return
         block = hit[4]
-        self.palette_tip.move("Add block: %s" % block.spec["label"],
+        self.palette_tip.move(tr("Add block: %s") % " ".join(v for k, v in block.spec["items"] if k == "t"),
                               event.x_root + 12, event.y_root + 16)
 
     # ---------- script area ----------
@@ -2808,11 +3434,11 @@ class App:
         if w < 50 or h < 50:
             return
         cx, cy = c.canvasx(w / 2), c.canvasy(h / 2)
-        c.create_text(cx, cy - 30, text="Start your program", fill=self.FG,
+        c.create_text(cx, cy - 30, text=tr("Start your program"), fill=self.FG,
                       font=(self.font.actual("family"), 20, "bold"), tags="welcome")
-        c.create_text(cx, cy + 12, text="Drag a block from the palette to get started", fill=self.MUTED,
+        c.create_text(cx, cy + 12, text=tr("Drag a block from the palette to get started"), fill=self.MUTED,
                       font=(self.font.actual("family"), 13), tags="welcome")
-        c.create_text(cx, cy + 40, text="or press Ctrl + O to open a file",
+        c.create_text(cx, cy + 40, text=tr("or press Ctrl + O to open a file"),
                   fill=self.MUTED, font=(self.font.actual("family"), 13), tags="welcome")
         c.tag_lower("welcome")
 
@@ -3643,6 +4269,14 @@ class App:
         save_config(self.cfg)
         self.mark_saved()
 
+    def choose_language(self, ev=None):
+        code = next((c for c, n in LANGUAGES if n == self.language_var.get()), "en")
+        if code == self.cfg.get("language", "en"):
+            return
+        self.cfg["language"] = code
+        save_config(self.cfg)
+        messagebox.showinfo("Language", _LANGUAGE_NOTICE.get(code, _LANGUAGE_NOTICE["en"]), parent=self.root)
+
     def show_examples_menu(self, anchor):
         menu = tk.Menu(self.root, tearoff=0)
         for name in EXAMPLES:
@@ -4171,10 +4805,10 @@ class App:
         c.configure(state="disabled")
 
     def ai_welcome(self):
-        self.ai_write("Hello! I'm ScratchPy's programming assistant (Gemini).\n"
-                      "Ask me for a program, an explanation, or help fixing an error. "
-                      "I can use your current code and console output. "
-                      "Requests are sent to the ScratchPy server.", "info")
+        self.ai_write(tr("Hello! I'm ScratchPy's programming assistant (Gemini).\n"
+                         "Ask me for a program, an explanation, or help fixing an error. "
+                         "I can use your current code and console output. "
+                         "Requests are sent to the ScratchPy server."), "info")
 
     def ai_reset(self):
         self.ai_token += 1                      # Ignore any pending response.
@@ -4450,6 +5084,9 @@ def main():
         except Exception:
             pass
     root = tk.Tk()
+    set_language(load_config().get("language", "en"))
+    install_i18n()
+    apply_block_language()
     app = App(root)
     root.update_idletasks()
     app.enable_file_drop()
