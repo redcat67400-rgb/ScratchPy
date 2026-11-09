@@ -73,8 +73,11 @@ def version_key(version):
     return tuple(map(int, match.groups())) if match else None
 
 
-with open(__file__, "rb") as _source_file:
-    APP_VERSION = source_version(_source_file.read(512).decode("utf-8-sig"))
+try:
+    with open(__file__, "rb") as _source_file:
+        APP_VERSION = source_version(_source_file.read(512).decode("utf-8-sig"))
+except OSError:                         # Packaged .exe without the embedded source.
+    APP_VERSION = None
 
 try:                                    # Optional: smooth (anti-aliased) block outlines.
     from PIL import Image, ImageDraw, ImageTk
@@ -2179,7 +2182,7 @@ class App:
                 messagebox.showinfo("Updates", "Update checks are available on Windows only.",
                                     parent=self.root)
             return
-        if getattr(sys, "frozen", False):
+        if getattr(sys, "frozen", False) and self.installed_updater() is None:
             if manual:
                 messagebox.showinfo("Updates", "Updates are not supported by this packaged build.",
                                     parent=self.root)
@@ -2298,9 +2301,44 @@ class App:
         y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_height()) // 2
         dialog.geometry("+%d+%d" % (max(0, x), max(0, y)))
 
+    def installed_updater(self):
+        """(folder, installer, python) when this .exe was installed by install_scratchpy.py."""
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if not local_app_data or not getattr(sys, "frozen", False):
+            return None
+        folder = os.path.abspath(os.path.join(local_app_data, "ScratchPy"))
+        if os.path.normcase(os.path.dirname(os.path.abspath(sys.executable))) != os.path.normcase(folder):
+            return None
+        installer = os.path.join(folder, "install_scratchpy.py")
+        try:
+            with open(os.path.join(folder, "python.txt"), encoding="utf-8") as f:
+                python = f.read().strip()
+        except OSError:
+            return None
+        if not (os.path.isfile(installer) and os.path.isfile(python)):
+            return None
+        return folder, installer, python
+
     def install_update(self):
         if self.update_payload is None:
             return True
+        if getattr(sys, "frozen", False):                  # Installed .exe: the installer rebuilds it.
+            info = self.installed_updater()
+            if info is None:
+                return True
+            folder, installer, python = info
+            try:
+                subprocess.Popen(
+                    [python, installer, "--update", "--wait-pid", str(os.getpid()), "--restart"],
+                    cwd=folder, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=(getattr(subprocess, "DETACHED_PROCESS", 0) |
+                                   getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+                return True
+            except OSError as ex:
+                messagebox.showerror("Update", "Could not start the installed updater:\n%s" % ex,
+                                     parent=self.root)
+                return False
         local_app_data = os.environ.get("LOCALAPPDATA")
         installer_payload = self.update_installer_payload
         if local_app_data:
