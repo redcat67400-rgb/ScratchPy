@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Install ScratchPy from the official GitHub repository on Windows.
-
-The installer downloads the program, builds a standalone ScratchPy.exe with PyInstaller
-and creates a desktop shortcut to it. If the .exe cannot be built (no network for pip,
-antivirus, ...), the shortcut starts scratchpy.pyw with Python instead.
-"""
+"""Install ScratchPy from the official GitHub repository on Windows."""
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import ctypes
 from ctypes import wintypes
 import urllib.error
@@ -26,10 +20,6 @@ FILES = {
 }
 MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024
 MAX_INSTALLER_SIZE = 1024 * 1024
-EXE_NAME = "ScratchPy.exe"
-HIDDEN_IMPORTS = ("random", "math", "time", "string", "datetime", "collections", "itertools",
-                  "statistics", "turtle", "PIL.ImageTk", "PIL._tkinter_finder")
-NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def download(url):
@@ -113,77 +103,7 @@ def pythonw_path():
     raise RuntimeError("Python 3 with pythonw.exe is required to run ScratchPy.")
 
 
-def python_path():
-    """python.exe (with a console), used to run pip and PyInstaller."""
-    current = Path(sys.executable)
-    candidates = [current.with_name("python.exe") if current.name.lower() == "pythonw.exe" else current,
-                  Path(sys.base_prefix) / "python.exe"]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    located = shutil.which("python.exe")
-    if located:
-        return Path(located)
-    raise RuntimeError("Python 3 (python.exe) is required to build ScratchPy.exe.")
-
-
-def run_quiet(command, cwd=None):
-    result = subprocess.run(command, capture_output=True, text=True, cwd=cwd,
-                            creationflags=NO_WINDOW, check=False)
-    if result.returncode:
-        tail = "\n".join((result.stderr or result.stdout or "").strip().splitlines()[-12:])
-        raise RuntimeError("%s failed:\n%s" % (" ".join(str(c) for c in command[:4]), tail))
-    return result
-
-
-def build_exe(files, folder):
-    """Build ScratchPy.exe with PyInstaller. Return the path of the new .exe (staged beside the
-    installation, not yet in place), or raise RuntimeError."""
-    python = python_path()
-    print("Installing the build tools (PyInstaller, Pillow)...")
-    run_quiet([str(python), "-m", "pip", "install", "--upgrade", "pyinstaller", "pillow"])
-    work = Path(tempfile.mkdtemp(prefix="scratchpy-build-"))
-    try:
-        src = work / "src"
-        src.mkdir()
-        script, icon = src / "scratchpy.pyw", src / "scratchpy_logo.ico"
-        script.write_bytes(files["scratchpy.pyw"])
-        icon.write_bytes(files["scratchpy_logo.ico"])
-        command = [str(python), "-m", "PyInstaller", "--noconsole", "--onefile", "--clean", "--noconfirm",
-                   "--name", "ScratchPy", "--icon", str(icon),
-                   "--add-data", "%s%s." % (icon, os.pathsep),
-                   "--add-data", "%s%s." % (script, os.pathsep),
-                   "--distpath", str(work / "dist"), "--workpath", str(work / "build"),
-                   "--specpath", str(work)]
-        for module in HIDDEN_IMPORTS:
-            command += ["--hidden-import", module]
-        command.append(str(script))
-        print("Building ScratchPy.exe (this can take a few minutes)...")
-        run_quiet(command, cwd=str(work))
-        built = work / "dist" / EXE_NAME
-        if not built.is_file() or built.stat().st_size < 1024 * 1024:
-            raise RuntimeError("PyInstaller did not produce a valid %s." % EXE_NAME)
-        fd, temp_path = tempfile.mkstemp(prefix=".ScratchPy.", suffix=".exe.new", dir=folder)
-        os.close(fd)
-        shutil.copyfile(built, temp_path)
-        return Path(temp_path)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
-
-
-def replace_with_retry(source, target, attempts=40):
-    """os.replace that waits while Windows still locks the old .exe."""
-    for attempt in range(attempts):
-        try:
-            os.replace(source, target)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(0.5)
-
-
-def create_shortcut(folder, target, arguments, icon_path):
+def create_shortcut(folder, script_path, icon_path, interpreter):
     powershell = shutil.which("powershell.exe")
     if not powershell:
         raise RuntimeError("Windows PowerShell was not found; cannot create the shortcut.")
@@ -193,8 +113,8 @@ $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDire
 if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'The Desktop folder was not found.' }
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut((Join-Path $desktop 'ScratchPy.lnk'))
-$shortcut.TargetPath = $env:SCRATCHPY_TARGET
-$shortcut.Arguments = $env:SCRATCHPY_ARGS
+$shortcut.TargetPath = $env:SCRATCHPY_INTERPRETER
+$shortcut.Arguments = '"' + $env:SCRATCHPY_SCRIPT + '"'
 $shortcut.WorkingDirectory = $env:SCRATCHPY_FOLDER
 $shortcut.IconLocation = $env:SCRATCHPY_ICON
 $shortcut.Description = 'ScratchPy - program in Python with blocks'
@@ -202,48 +122,27 @@ $shortcut.Save()
 """
     env = os.environ.copy()
     env.update({
-        "SCRATCHPY_TARGET": str(target),
-        "SCRATCHPY_ARGS": arguments,
+        "SCRATCHPY_INTERPRETER": str(interpreter),
+        "SCRATCHPY_SCRIPT": str(script_path),
         "SCRATCHPY_FOLDER": str(folder),
         "SCRATCHPY_ICON": str(icon_path),
     })
     result = subprocess.run(
         [powershell, "-NoProfile", "-NonInteractive", "-Command", command],
-        capture_output=True, text=True, env=env, creationflags=NO_WINDOW, check=False)
+        capture_output=True, text=True, env=env,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
     if result.returncode:
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeError("Could not create the desktop shortcut: %s" % detail)
 
 
-def install_folder():
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if not local_app_data:
-        raise RuntimeError("The Windows LOCALAPPDATA folder could not be found.")
-    return Path(local_app_data) / "ScratchPy"
-
-
-def try_build(files, folder):
-    """Return the staged .exe, or None (with a message) when it cannot be built."""
-    try:
-        return build_exe(files, folder)
-    except Exception as error:
-        print("Could not build ScratchPy.exe: %s" % error, file=sys.stderr)
-        print("ScratchPy will start with Python (scratchpy.pyw) instead.", file=sys.stderr)
-        return None
-
-
-def remember_python(folder):
-    """The app uses this file to run this installer again when it updates itself."""
-    try:
-        (folder / "python.txt").write_text(str(python_path()), encoding="utf-8")
-    except Exception:
-        pass
-
-
 def install():
     if sys.platform != "win32":
         raise RuntimeError("This installer is for Windows only.")
-    folder = install_folder()
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        raise RuntimeError("The Windows LOCALAPPDATA folder could not be found.")
+    folder = Path(local_app_data) / "ScratchPy"
     folder.mkdir(parents=True, exist_ok=True)
 
     print("Downloading ScratchPy from GitHub...")
@@ -251,18 +150,11 @@ def install():
     validate_downloads(files)
 
     stage_files(folder, files)
-    remember_python(folder)
-    icon_path = folder / "scratchpy_logo.ico"
-    script_path = folder / "scratchpy.pyw"
 
-    staged_exe = try_build(files, folder)
-    if staged_exe is not None:
-        exe_path = folder / EXE_NAME
-        replace_with_retry(staged_exe, exe_path)
-        create_shortcut(folder, exe_path, "", icon_path)
-        print("ScratchPy.exe built in: %s" % folder)
-    else:
-        create_shortcut(folder, pythonw_path(), '"%s"' % script_path, icon_path)
+    script_path = folder / "scratchpy.pyw"
+    icon_path = folder / "scratchpy_logo.ico"
+    interpreter = pythonw_path()
+    create_shortcut(folder, script_path, icon_path, interpreter)
     print("ScratchPy installed in: %s" % folder)
     print("Desktop shortcut created: ScratchPy")
 
@@ -270,31 +162,28 @@ def install():
 def update_existing(wait_pid=0, restart=False):
     if sys.platform != "win32":
         raise RuntimeError("This updater is for Windows only.")
-    folder = install_folder()
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        raise RuntimeError("The Windows LOCALAPPDATA folder could not be found.")
+    folder = Path(local_app_data) / "ScratchPy"
     if not (folder / "scratchpy.pyw").is_file():
         raise RuntimeError("ScratchPy is not installed in %s." % folder)
 
     print("Downloading the ScratchPy update...")
     files = {name: download(url) for name, url in FILES.items()}
     validate_downloads(files)
-    staged_exe = try_build(files, folder)                 # Built while ScratchPy is still open.
     wait_for_process(wait_pid)
     stage_files(folder, files)
-    remember_python(folder)
 
     script_path = folder / "scratchpy.pyw"
-    exe_path = folder / EXE_NAME
-    if staged_exe is not None:
-        replace_with_retry(staged_exe, exe_path)
-        create_shortcut(folder, exe_path, "", folder / "scratchpy_logo.ico")
     if restart:
-        command = ([str(exe_path)] if staged_exe is not None
-                   else [str(pythonw_path()), str(script_path)])
+        interpreter = pythonw_path()
         subprocess.Popen(
-            command, cwd=str(folder),
+            [str(interpreter), str(script_path)], cwd=str(folder),
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=(getattr(subprocess, "DETACHED_PROCESS", 0) | NO_WINDOW))
+            creationflags=(getattr(subprocess, "DETACHED_PROCESS", 0) |
+                           getattr(subprocess, "CREATE_NO_WINDOW", 0)))
     print("ScratchPy updated in: %s" % folder)
 
 
