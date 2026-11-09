@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.10
+# Version: V26.13
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -24,6 +24,7 @@ import ast
 import codecs
 import colorsys
 import copy
+import difflib
 import http.client
 import importlib
 import importlib.util
@@ -40,6 +41,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import tokenize
 import threading
 import time
 import traceback
@@ -218,6 +220,33 @@ def lib_color(name):
 LIBS = {}   # Module name -> block IDs.
 
 
+# Panels of the right-hand column: key -> (title, minimum height, default share of the height).
+RIGHT_PANELS = {"code": ("Python code", 200, 0.334),
+                "console": ("Console", 110, 0.299),
+                "assistant": ("AI assistant", 200, 0.367)}
+
+
+def clean_panel_layout(data):
+    """Saved layout -> (order, hidden), always valid: every panel exactly once, unknown ones dropped."""
+    data = data if isinstance(data, dict) else {}
+    order = [k for k in data.get("order", []) if k in RIGHT_PANELS]
+    order += [k for k in RIGHT_PANELS if k not in order]
+    order = list(dict.fromkeys(order))
+    hidden = [k for k in dict.fromkeys(data.get("hidden", [])) if k in RIGHT_PANELS]
+    return order, hidden
+
+
+def panel_sash_positions(order, hidden, height):
+    """Sash y positions (one per gap between visible panels) from the default shares."""
+    shown = [k for k in order if k not in hidden]
+    total = sum(RIGHT_PANELS[k][2] for k in shown) or 1
+    pos, acc = [], 0.0
+    for k in shown[:-1]:
+        acc += RIGHT_PANELS[k][2] / total
+        pos.append(int(height * acc))
+    return pos
+
+
 # Colour themes: "light" / "dark" (neutral) and "<colour>-light" / "<colour>-dark".
 ACCENTS = {"default": None, "red": 0, "green": 140, "yellow": 45, "blue": 215, "purple": 270}
 
@@ -275,6 +304,39 @@ def theme_palette(name):
             "CONSOLE": _hsl(hue, .32, .92), "CONSOLE_FG": _hsl(hue, .30, .13),
             "BUTTON_BORDER": _hsl(hue, .20, .62), "SELECT": _hsl(hue, .85, .86),
             "SASH": _hsl(hue, .30, .84)}
+
+
+def diff_lines(old, new):
+    """Unified diff as [(tag, text)] with tag in 'add', 'del', 'hunk', 'ctx'."""
+    out = []
+    for line in difflib.unified_diff(old.splitlines(), new.splitlines(), "current code", "suggested code",
+                                     lineterm="", n=2):
+        if line.startswith(("---", "+++")):
+            continue
+        tag = "hunk" if line.startswith("@@") else "add" if line.startswith("+") else \
+            "del" if line.startswith("-") else "ctx"
+        out.append((tag, line))
+    return out
+
+
+QUICK_PROMPTS = {
+    "explain": ("Explain", "Explain this code simply, step by step."),
+    "fix": ("Fix", "Find and fix the bugs in this code. Give the complete corrected program."),
+    "optimize": ("Optimize", "Simplify and improve this code without changing what it does. "
+                             "Give the complete program."),
+}
+
+
+def block_text(b):
+    """Searchable text of a block: its label and the text typed in its fields."""
+    return (b.spec["label"] + " " + " ".join(str(f) for f in b.fields if not isinstance(f, Block))
+            + " " + b.t).lower()
+
+
+def find_blocks(blocks, query):
+    """uids of the blocks matching `query` (case-insensitive), in the order given."""
+    q = query.strip().lower()
+    return [b.uid for b in blocks if q and q in block_text(b)]
 
 
 def _lighten(h, k=0.14):
@@ -552,9 +614,35 @@ def _lines(n):
     return [Block("pyline", [ln]) for ln in _u(n).split("\n")]
 
 
+_COMMENTS = {}          # line number -> text of the full-line comments of the code being converted
+_PLACEHOLDER_COMMENT = "(no blocks yet)"
+
+
+def _collect_comments(src):
+    """Full-line comments of `src` (comments after code on the same line are not blocks)."""
+    found = {}
+    try:
+        import io
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type == tokenize.COMMENT and tok.line.strip().startswith("#"):
+                text = tok.string[1:].strip()
+                if text and text != _PLACEHOLDER_COMMENT:
+                    found[tok.start[0]] = text
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        pass
+    return found
+
+
+def _comment_blocks(before_line=None):
+    """Comment blocks for the pending comments above `before_line` (all of them when None)."""
+    done = [ln for ln in sorted(_COMMENTS) if before_line is None or ln < before_line]
+    return [Block("comment", [_COMMENTS.pop(ln)]) for ln in done]
+
+
 def _body(stmts):
     out = []
     for n in stmts:
+        out.extend(_comment_blocks(getattr(n, "lineno", None)))
         out.extend(_conv(n))
     return out
 
@@ -619,7 +707,7 @@ def _conv(n):
     if t is ast.Assign and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
         return [B("set", [n.targets[0].id, _u(n.value)])]
     if t is ast.AugAssign and isinstance(n.target, ast.Name) and isinstance(n.op, ast.Add):
-        return [B("change", [n.target.id, _u(n.value)])]
+        return [B("change", [_u(n.value), n.target.id])]
     if t is ast.Expr and isinstance(n.value, ast.Call):
         c, f = n.value, n.value.func
         if isinstance(f, ast.Name) and f.id == "print" and len(c.args) == 1 and _simple_args(c):
@@ -636,7 +724,13 @@ def _conv(n):
 
 def python_to_blocks(src):
     """Convert Python source to blocks (raises SyntaxError for invalid code)."""
-    return _body(ast.parse(src).body)
+    tree = ast.parse(src)
+    _COMMENTS.clear()
+    _COMMENTS.update(_collect_comments(src))
+    try:
+        return _body(tree.body) + _comment_blocks()
+    finally:
+        _COMMENTS.clear()
 
 
 _HEADER = [("sys", None), ("time", None), ("random", None), ("math", None)]
@@ -648,7 +742,8 @@ def python_to_project(src, generated=False):
     With generated=True, ignore the editor's standard import header and read
     sys.path.insert(0, '...') lines as project paths."""
     imports, paths, rest = [], [], []
-    for n in ast.parse(src).body:
+    tree = ast.parse(src)
+    for n in tree.body:
         if generated and isinstance(n, ast.Import) and [(a.name, a.asname) for a in n.names] == _HEADER:
             continue
         if (generated and isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
@@ -663,7 +758,12 @@ def python_to_project(src, generated=False):
             imports.append((n.module, _u(n)))
         else:
             rest.append(n)
-    return _body(rest), imports, paths
+    _COMMENTS.clear()
+    _COMMENTS.update(_collect_comments(src))
+    try:
+        return _body(rest) + _comment_blocks(), imports, paths
+    finally:
+        _COMMENTS.clear()
 
 
 def count_blocks(L):
@@ -791,6 +891,7 @@ class Renderer:
         self.lh = font.metrics("linespace")
         self.force_ctx = None
         self.selected = set()
+        self.found, self.found_current = set(), None      # Search results (highlighted outlines).
         self.reset()
 
     def reset(self):
@@ -810,7 +911,13 @@ class Renderer:
 
     def _ol(self, b, dark):
         """Return a thick white outline for selected blocks."""
-        return ("#FFFFFF", 3) if b.uid in self.selected else (dark, 1)
+        if b.uid in self.selected:
+            return "#FFFFFF", 3
+        if b.uid == self.found_current:
+            return "#FF6A00", 4
+        if b.uid in self.found:
+            return "#FFD60A", 3
+        return dark, 1
 
     def find(self, x, y):
         for h in reversed(self.hits):
@@ -1016,6 +1123,149 @@ def save_config(cfg):
             pass
     except OSError:
         pass
+
+
+# --------------------------------------------------------------------------
+# Recent files, built-in examples and keyboard shortcuts
+# --------------------------------------------------------------------------
+RECENT_MAX = 10
+
+
+def push_recent(items, path, limit=RECENT_MAX):
+    """Return the recent-files list with `path` first, without duplicates, at most `limit` long."""
+    path = os.path.abspath(path)
+    key = os.path.normcase(path)
+    rest = [p for p in items if isinstance(p, str) and os.path.normcase(os.path.abspath(p)) != key]
+    return ([path] + rest)[:limit]
+
+
+EXAMPLES = {
+    "Sum and comparison": """total = 0
+for i in range(1, 6):
+    total += i
+    print("Partial sum: " + str(total))
+if total > 10:
+    print("It is greater than 10!")
+elif total == 10:
+    print("Exactly 10.")
+else:
+    print("It is less than 10.")
+""",
+    "Guess the number": """import random
+secret = random.randint(1, 100)
+tries = 0
+guess = 0
+print("I am thinking of a number between 1 and 100.")
+while guess != secret:
+    guess = int(input("Your guess? "))
+    tries += 1
+    if guess < secret:
+        print("Higher!")
+    elif guess > secret:
+        print("Lower!")
+print("Found in " + str(tries) + " tries!")
+""",
+    "Calculator": """a = float(input("First number? "))
+op = input("Operation (+ - * /)? ")
+b = float(input("Second number? "))
+if op == "+":
+    print(a + b)
+elif op == "-":
+    print(a - b)
+elif op == "*":
+    print(a * b)
+elif op == "/":
+    if b == 0:
+        print("Cannot divide by zero.")
+    else:
+        print(a / b)
+else:
+    print("Unknown operation.")
+""",
+    "Multiplication table": """n = int(input("Which table? "))
+for i in range(1, 11):
+    print(str(n) + " x " + str(i) + " = " + str(n * i))
+""",
+    "FizzBuzz": """for i in range(1, 31):
+    if i % 15 == 0:
+        print("FizzBuzz")
+    elif i % 3 == 0:
+        print("Fizz")
+    elif i % 5 == 0:
+        print("Buzz")
+    else:
+        print(i)
+""",
+    "Greeting function": """def greet(name):
+    print("Hello " + name)
+
+
+name = input("Your name? ")
+greet(name)
+""",
+}
+
+# (id, label, default Tk sequence)
+SHORTCUT_ACTIONS = [
+    ("run", "Run the program", "<F5>"),
+    ("stop", "Stop the program", "<Shift-F5>"),
+    ("new", "New project", "<Control-n>"),
+    ("open", "Open a file", "<Control-o>"),
+    ("save", "Save the project", "<Control-s>"),
+    ("find", "Search the workspace", "<Control-f>"),
+    ("find_next", "Next search result", "<F3>"),
+    ("find_prev", "Previous search result", "<Shift-F3>"),
+    ("shortcuts", "Show the shortcuts", "<F1>"),
+]
+# Fixed shortcuts, listed in the help window only.
+FIXED_SHORTCUTS = [
+    ("Ctrl+Z / Ctrl+Y", "Undo / redo"),
+    ("Ctrl+A", "Select all blocks"),
+    ("Ctrl+C / Ctrl+V", "Copy / paste the selected blocks"),
+    ("Ctrl+D", "Duplicate the selected blocks"),
+    ("Delete", "Delete the selected blocks"),
+    ("Ctrl+wheel, Ctrl+ +/-/0", "Zoom"),
+]
+_MODIFIER_KEYS = {"Control_L", "Control_R", "Shift_L", "Shift_R", "Alt_L", "Alt_R", "Meta_L", "Meta_R",
+                  "Super_L", "Super_R", "Caps_Lock", "Num_Lock", "ISO_Level3_Shift"}
+
+
+def seq_label(seq):
+    """'<Control-Shift-o>' -> 'Ctrl+Shift+O'."""
+    parts = seq.strip("<>").split("-")
+    key = parts[-1] if parts[-1] else "-"
+    if seq.endswith("--"):
+        parts, key = seq.strip("<>")[:-2].split("-") if seq.strip("<>")[:-2] else [], "-"
+        parts = [x for x in parts if x]
+    else:
+        parts = parts[:-1]
+    names = {"Control": "Ctrl", "Command": "Cmd", "minus": "-", "plus": "+", "equal": "="}
+    out = [names.get(x, x) for x in parts]
+    out.append(names.get(key, key.upper() if len(key) == 1 else key))
+    return "+".join(out)
+
+
+def event_to_seq(event):
+    """Turn a key event into a Tk sequence, or None for a lone modifier key."""
+    if event.keysym in _MODIFIER_KEYS:
+        return None
+    state = event.state
+    mods = []
+    if state & 0x4:
+        mods.append("Control")
+    if state & (0x20000 if sys.platform == "win32" else 0x8):
+        mods.append("Alt")
+    if state & 0x1:
+        mods.append("Shift")
+    key = event.keysym
+    if len(key) == 1:
+        key = key.lower()
+    return "<%s>" % "-".join(mods + [key])
+
+
+def shortcut_conflicts(mapping, action, seq):
+    """Ids of the other actions that already use `seq`."""
+    return [a for a, q in mapping.items() if a != action and q.lower() == seq.lower()]
 
 
 class AssistantError(Exception):
@@ -1246,6 +1496,7 @@ class App:
         self.zfont = tkfont.Font(family=base.actual("family"), size=10, weight="bold")
         self.zefont = tkfont.Font(family=base.actual("family"), size=10)
         self.zoom = 1.0
+        self.found, self.found_current = [], None
         self.aa_ws, self.aa_pal = {}, {}      # Cached smooth block pictures.
         self.scripts = []
         self.saved_state = None
@@ -1505,6 +1756,198 @@ class App:
                                  parent=self.root)
             return False
 
+    # ---------- search in the workspace (Ctrl+F) ----------
+    def build_find_bar(self, parent):
+        bar = tk.Frame(parent, bd=1, relief="solid")
+        self.find_var = tk.StringVar()
+        self.find_count = tk.StringVar(value="")
+        tk.Label(bar, text="Find:").pack(side="left", padx=(6, 2))
+        self.find_entry = ttk.Entry(bar, textvariable=self.find_var, width=24)
+        self.find_entry.pack(side="left", pady=4)
+        tk.Label(bar, textvariable=self.find_count, width=9).pack(side="left", padx=4)
+        for text, step, tip in (("▲", -1, "Previous result (Shift+F3)"), ("▼", 1, "Next result (F3 / Enter)")):
+            b = ttk.Button(bar, text=text, width=2, style="Panel.TButton",
+                           command=lambda st=step: self.find_step(st))
+            b.pack(side="left", padx=1)
+            ToolTip(b, tip)
+        close = ttk.Button(bar, text="✕", width=2, style="Panel.TButton", command=self.hide_find)
+        close.pack(side="left", padx=(1, 4))
+        ToolTip(close, "Close search (Esc)")
+        self.find_bar = bar
+        self.find_var.trace_add("write", lambda *a: self.run_find())
+        self.find_entry.bind("<Return>", lambda e: (self.find_step(1), "break")[1])
+        self.find_entry.bind("<Shift-Return>", lambda e: (self.find_step(-1), "break")[1])
+        self.find_entry.bind("<Escape>", lambda e: (self.hide_find(), "break")[1])
+
+    def show_find(self):
+        self.tabs.select(self.main_paned)
+        self.find_bar.place(relx=1.0, x=-24, y=8, anchor="ne")
+        self.find_bar.lift()
+        self.find_entry.focus_set()
+        self.find_entry.selection_range(0, "end")
+        self.run_find()
+
+    def hide_find(self):
+        self.find_bar.place_forget()
+        self.found, self.found_current = [], None
+        self.render()
+        self.ws.focus_set()
+
+    def run_find(self):
+        """Search again (the text changed or the blocks did) and jump to the first result."""
+        self.found = find_blocks([b for b, ctx, anc in self.iter_blocks()], self.find_var.get())
+        self.found_current = self.found[0] if self.found else None
+        self.update_find_count()
+        self.render()
+        self.scroll_to_block(self.found_current)
+
+    def find_step(self, step):
+        if not self.find_bar.winfo_ismapped():
+            return self.show_find()
+        self.found = find_blocks([b for b, ctx, anc in self.iter_blocks()], self.find_var.get())
+        if not self.found:
+            self.found_current = None
+        else:
+            i = self.found.index(self.found_current) if self.found_current in self.found else -step
+            self.found_current = self.found[(i + step) % len(self.found)]
+        self.update_find_count()
+        self.render()
+        self.scroll_to_block(self.found_current)
+
+    def update_find_count(self):
+        if not self.find_var.get().strip():
+            self.find_count.set("")
+        elif not self.found:
+            self.find_count.set("No result")
+        else:
+            self.find_count.set("%d / %d" % (self.found.index(self.found_current) + 1, len(self.found)))
+
+    def scroll_to_block(self, uid):
+        """Scroll the workspace so that the block is visible (roughly a third from the top)."""
+        if uid is None:
+            return
+        hit = next((h for h in self.wsr.hits if h[4].uid == uid), None)
+        if hit is None:
+            return
+        c, z = self.ws, self.zoom
+        try:
+            _, _, sw, sh = (float(v) for v in str(c.cget("scrollregion")).split())
+        except ValueError:
+            return
+        x, y = hit[0] * z, hit[1] * z
+        if sh > 0:
+            c.yview_moveto(max(0.0, (y - c.winfo_height() / 3) / sh))
+        if sw > 0 and (x < c.canvasx(0) or x + hit[2] * z > c.canvasx(c.winfo_width())):
+            c.xview_moveto(max(0.0, (x - 60) / sw))
+
+    # ---------- right column: panels that can be moved and hidden ----------
+    def add_panel_controls(self, head, key):
+        """▲ ▼ ✕ buttons in the header of a panel (packed first = rightmost)."""
+        if not hasattr(self, "panel_buttons"):
+            self.panel_buttons = {}
+        hide = ttk.Button(head, text="✕", width=2, style="Panel.TButton",
+                          command=lambda: self.set_panel_visible(key, False))
+        down = ttk.Button(head, text="▼", width=2, style="Panel.TButton",
+                          command=lambda: self.move_panel(key, 1))
+        up = ttk.Button(head, text="▲", width=2, style="Panel.TButton",
+                        command=lambda: self.move_panel(key, -1))
+        for b in (hide, down, up):
+            b.pack(side="right", padx=1, pady=2)
+        ToolTip(hide, "Hide this panel (Panels menu to show it again)")
+        ToolTip(down, "Move this panel down")
+        ToolTip(up, "Move this panel up")
+        self.panel_buttons[key] = (up, down)
+
+    def layout_right_panels(self, initial=False, reset_sizes=True):
+        """(Re)build the right column from the saved order and visibility."""
+        shown = [k for k in self.panel_order if k not in self.panel_hidden]
+        for frame in self.panels.values():
+            try:
+                self.right_paned.forget(frame)
+            except tk.TclError:
+                pass
+        for k in shown:
+            self.right_paned.add(self.panels[k], minsize=RIGHT_PANELS[k][1])
+        if shown and not self.right_shown:
+            self.main_paned.add(self.right_paned, minsize=300)
+            self.right_shown = True
+        elif not shown and self.right_shown:
+            self.main_paned.forget(self.right_paned)
+            self.right_shown = False
+        for k, var in getattr(self, "panel_vars", {}).items():      # Keep the Settings check boxes in sync.
+            var.set(k in shown)
+        for k, (up, down) in self.panel_buttons.items():
+            up.configure(state="normal" if k in shown and k != shown[0] else "disabled")
+            down.configure(state="normal" if k in shown and k != shown[-1] else "disabled")
+        if reset_sizes and not initial:
+            self.root.after_idle(self._place_right_sashes)
+        if self.right_shown and not initial:
+            self.root.after_idle(self._place_main_sashes)
+
+    def _place_right_sashes(self):
+        try:
+            h = self.right_paned.winfo_height()
+            if h > 200:
+                for i, y in enumerate(panel_sash_positions(self.panel_order, self.panel_hidden, h)):
+                    self.right_paned.sash_place(i, 0, y)
+        except tk.TclError:
+            pass
+
+    def _place_main_sashes(self):
+        try:
+            w = self.main_paned.winfo_width()
+            if w > 200 and len(self.main_paned.panes()) >= 3:
+                self.main_paned.sash_place(0, int(w * 0.214), 0)
+                self.main_paned.sash_place(1, w - int(w * 0.277), 0)
+        except tk.TclError:
+            pass
+
+    def save_panel_layout(self):
+        self.cfg["right_panels"] = {"order": self.panel_order, "hidden": self.panel_hidden}
+        save_config(self.cfg)
+
+    def move_panel(self, key, step):
+        shown = [k for k in self.panel_order if k not in self.panel_hidden]
+        if key not in shown:
+            return
+        i = shown.index(key) + step
+        if not 0 <= i < len(shown):
+            return
+        other = shown[i]
+        a, b = self.panel_order.index(key), self.panel_order.index(other)
+        self.panel_order[a], self.panel_order[b] = self.panel_order[b], self.panel_order[a]
+        self.save_panel_layout()
+        self.layout_right_panels()
+
+    def set_panel_visible(self, key, visible):
+        if visible and key in self.panel_hidden:
+            self.panel_hidden.remove(key)
+        elif not visible and key not in self.panel_hidden:
+            self.panel_hidden.append(key)
+        else:
+            return
+        self.save_panel_layout()
+        self.layout_right_panels()
+
+    def reset_panel_layout(self):
+        self.panel_order, self.panel_hidden = list(RIGHT_PANELS), []
+        self.save_panel_layout()
+        self.layout_right_panels()
+
+    def show_panels_menu(self, anchor):
+        menu = tk.Menu(self.root, tearoff=0)          # Built on demand so it always follows the theme.
+        for k in self.panel_order:
+            var = tk.BooleanVar(value=k not in self.panel_hidden)
+            menu.add_checkbutton(label=RIGHT_PANELS[k][0], variable=var,
+                                 command=lambda k=k, v=var: self.set_panel_visible(k, v.get()))
+        menu.add_separator()
+        mm = tk.BooleanVar(value=self.minimap_on)
+        menu.add_checkbutton(label="Minimap", variable=mm, command=lambda: self.set_minimap(mm.get()))
+        menu.add_command(label="Keyboard shortcuts…", command=self.show_shortcuts)
+        menu.add_separator()
+        menu.add_command(label="Reset layout", command=self.reset_panel_layout)
+        menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height())
+
     def _init_paned_positions(self):
         """Default panel proportions (same layout whatever the screen size):
         palette 21 %, workspace 51 %, right column 28 %; right column: code 33 %, console 30 %, assistant 37 %."""
@@ -1514,10 +1957,7 @@ class App:
                 self.main_paned.sash_place(0, int(w * 0.214), 0)
                 self.main_paned.sash_place(1, w - int(w * 0.277), 0)
 
-            h = self.right_paned.winfo_height()
-            if h > 200:
-                self.right_paned.sash_place(0, 0, int(h * 0.334))
-                self.right_paned.sash_place(1, 0, int(h * 0.633))
+            self._place_right_sashes()
         except Exception:
             pass
 
@@ -1560,6 +2000,7 @@ class App:
         """Set the dark theme and use Calibri (or Arial as a fallback)."""
         root = self.root
         self.theme_name = self.cfg.get("theme", "dark")
+        self.minimap_on = bool(self.cfg.get("minimap", True))
         if split_theme(self.theme_name) is None:
             self.theme_name = "dark"
         BG, BG2, EDIT, FG, MUTED, ACCENT, BORDER = (self.BG, self.BG2, self.EDIT, self.FG,
@@ -1658,6 +2099,7 @@ class App:
                      fieldbackground=self.EDIT, bordercolor=self.BORDER,
                      lightcolor=self.BG2, darkcolor=self.BG2, troughcolor=self.BG,
                      focuscolor=self.BG, insertcolor=self.FG)
+        st.configure("Panel.TButton", padding=(5, 1))          # Small ▲ ▼ ✕ buttons of the panels.
         st.configure("TButton", background=self.BG2, foreground=self.FG,
                    relief="solid", borderwidth=1, bordercolor=colors["BUTTON_BORDER"])
         st.map("TButton", background=[("pressed", self.BORDER), ("active", self.BG2)],
@@ -1761,20 +2203,26 @@ class App:
             "New": "Create a new project", "Open (.py or project)…": "Open Python or ScratchPy project",
             "Save": "Save the current project (Ctrl+S)", "Save As…": "Save to a new project file",
             "Export .py…": "Export the generated Python code", "Import a library…": "Add blocks from a Python library",
-            "Example": "Load an example project"}
+            "Recent ▾": "Reopen a recent file", "Examples ▾": "Load a built-in example program"}
         for item in (("▶ Run", self.run), ("■ Stop", self.stop), None,
               ("Undo", self.undo), ("Redo", self.redo), None,
-                  ("New", self.new), ("Open (.py or project)…", self.open_file),
+                  ("New", self.new), ("Open (.py or project)…", self.open_file), ("Recent ▾", "recent"),
                   ("Save", self.save_file), ("Save As…", self.save_as),
                   ("Export .py…", self.export_py),
                   None, ("Import a library…", self.import_lib),
-              ("Example", self.load_example), None, ("About", self.show_about)):
+              ("Examples ▾", "examples"), None, ("About", self.show_about)):
             if item is None:
                 ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
                 continue
             text, cmd = item
+            holder = []
+            if cmd == "recent":
+                cmd = lambda h=holder: self.show_recent_menu(h[0])
+            elif cmd == "examples":
+                cmd = lambda h=holder: self.show_examples_menu(h[0])
             sty = "Run.TButton" if cmd == self.run else "Stop.TButton" if cmd == self.stop else "TButton"
             button = ttk.Button(bar, text=text, command=cmd, style=sty)
+            holder.append(button)
             button.pack(side="left", padx=2)
             ToolTip(button, tips.get(text, "About ScratchPy"))
         zf = tk.Frame(bar)
@@ -1791,6 +2239,9 @@ class App:
         zoom_out.pack(side="right", padx=2)
         ToolTip(zoom_out, "Zoom out")
         tk.Label(zf, text="Zoom:").pack(side="right", padx=(8, 2))
+        panels_button = ttk.Button(bar, text="Panels ▾", command=lambda: self.show_panels_menu(panels_button))
+        panels_button.pack(side="right", padx=10)
+        ToolTip(panels_button, "Show, hide or reset the panels of the right column")
 
         self.tabs = ttk.Notebook(root)
         self.tabs.pack(fill="both", expand=True)
@@ -1825,10 +2276,13 @@ class App:
         self.ws = tk.Canvas(mid, bg="#1b1d23", highlightthickness=0, yscrollincrement=20, xscrollincrement=20)
         vs = ttk.Scrollbar(mid, orient="vertical", command=self.ws.yview)
         hs = ttk.Scrollbar(mid, orient="horizontal", command=self.ws.xview)
-        self.ws.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        self.ws.configure(yscrollcommand=lambda *a: (vs.set(*a), self.update_minimap()),
+                          xscrollcommand=lambda *a: (hs.set(*a), self.update_minimap()))
         vs.pack(side="right", fill="y")
         hs.pack(side="bottom", fill="x")
         self.ws.pack(side="left", fill="both", expand=True)
+        self.build_find_bar(mid)
+        self.build_minimap(mid)
         self.main_paned.add(mid, minsize=300, stretch="always")
 
         # 3. Right panel (code + console + AI assistant)
@@ -1840,6 +2294,7 @@ class App:
         head = tk.Frame(codef)
         head.pack(fill="x")
         tk.Label(head, text="Python code (editable)", font=self.font).pack(side="left", padx=4)
+        self.add_panel_controls(head, "code")
         copy_code_button = ttk.Button(head, text="Copy", command=self.copy_code)
         copy_code_button.pack(side="right", padx=4, pady=2)
         ToolTip(copy_code_button, "Copy generated Python code")
@@ -1868,11 +2323,16 @@ class App:
                 self.code.bind(seq, self.code_dedent)
             except tk.TclError:
                 pass
-        self.right_paned.add(codef, minsize=200)
 
         # Console
         conf = tk.Frame(self.right_paned)
-        tk.Label(conf, text="Console", font=self.font).pack(anchor="w", padx=4)
+        console_head = tk.Frame(conf)
+        console_head.pack(fill="x")
+        tk.Label(console_head, text="Console", font=self.font).pack(side="left", padx=4)
+        self.add_panel_controls(console_head, "console")
+        self.console_ai_btn = ttk.Button(console_head, text="Ask AI to fix", style="Panel.TButton",
+                                         command=self.ai_fix_console)
+        ToolTip(self.console_ai_btn, "Send the error to the AI assistant")
         self.console = tk.Text(conf, bg="#101216", fg="#d6dae0", font=mono,
                                state="disabled", bd=0, padx=8, pady=4, wrap="word")
         self.console.tag_configure("err", foreground="#ff8a80")
@@ -1887,13 +2347,13 @@ class App:
         send_button = ttk.Button(inp, text="Send", command=self.send_input)
         send_button.pack(side="left", padx=4)
         ToolTip(send_button, "Send input to the running program")
-        self.right_paned.add(conf, minsize=110)
 
         # Gemini AI assistant.
         ai_frame = tk.Frame(self.right_paned)
         ai_top = tk.Frame(ai_frame)
         ai_top.pack(fill="x")
         tk.Label(ai_top, text="Gemini AI assistant", font=self.font).pack(side="left", padx=4)
+        self.add_panel_controls(ai_top, "assistant")
         new_chat_button = ttk.Button(ai_top, text="New chat", command=self.ai_reset)
         new_chat_button.pack(side="right", padx=2)
         ToolTip(new_chat_button, "Clear the assistant conversation")
@@ -1909,6 +2369,13 @@ class App:
         self.ai_combo.pack(side="left", fill="x", expand=True, padx=2)
         ai_inp = tk.Frame(ai_frame)
         ai_inp.pack(side="bottom", fill="x", pady=4)
+        quick = tk.Frame(ai_frame)
+        quick.pack(side="bottom", fill="x")
+        tk.Label(quick, text="Quick:").pack(side="left", padx=4)
+        for kind, (label, _) in QUICK_PROMPTS.items():
+            qb = ttk.Button(quick, text=label, style="Panel.TButton", command=lambda k=kind: self.ai_quick(k))
+            qb.pack(side="left", padx=2, pady=2)
+            ToolTip(qb, "%s the selected code (or the whole program if nothing is selected)" % label)
         tk.Label(ai_inp, text="Prompt:").pack(side="left", padx=4)
         self.ai_var = tk.StringVar()
         ai_ent = ttk.Entry(ai_inp, textvariable=self.ai_var)
@@ -1936,9 +2403,11 @@ class App:
         self.ai_chat.pack(fill="both", expand=True)
 
         self.ai_welcome()
-        self.right_paned.add(ai_frame, minsize=200)
+        self.panels = {"code": codef, "console": conf, "assistant": ai_frame}
+        self.panel_order, self.panel_hidden = clean_panel_layout(self.cfg.get("right_panels"))
 
-        self.main_paned.add(self.right_paned, minsize=300)
+        self.right_shown = False
+        self.layout_right_panels(initial=True)
 
         self.tabs.add(self.main_paned, text="Workspace")
         self.settings_tab = ttk.Frame(self.tabs, padding=20)
@@ -1970,8 +2439,20 @@ class App:
             sw.pack(side="left", padx=(0, 4))
             ttk.Radiobutton(cell, text=accent.capitalize(), value=accent, variable=self.settings_accent_var,
                             command=choose_theme).pack(side="left")
+        panels_box = ttk.LabelFrame(self.settings_tab, text="Panels (right column)", padding=14)
+        panels_box.pack(anchor="nw", fill="x", pady=(12, 0))
+        self.panel_vars = {}
+        for i, k in enumerate(RIGHT_PANELS):
+            var = tk.BooleanVar(value=k not in self.panel_hidden)
+            self.panel_vars[k] = var
+            ttk.Checkbutton(panels_box, text=RIGHT_PANELS[k][0], variable=var,
+                            command=lambda k=k: self.set_panel_visible(k, self.panel_vars[k].get())).grid(
+                                row=0, column=i, sticky="w", padx=(0, 18))
+        reset_button = ttk.Button(panels_box, text="Reset layout", command=self.reset_panel_layout)
+        reset_button.grid(row=0, column=len(RIGHT_PANELS), sticky="w")
+        ToolTip(reset_button, "Show all panels in their default order")
         autosave_box = ttk.LabelFrame(self.settings_tab, text="Automatic save", padding=14)
-        autosave_box.pack(anchor="nw", fill="x", pady=(0, 12))
+        autosave_box.pack(anchor="nw", fill="x", pady=(12, 0))
         ttk.Label(autosave_box, text="Backup file").grid(row=0, column=0, sticky="w", padx=(0, 18))
         ttk.Label(autosave_box, text=os.path.join("save", "autosave.json")).grid(
             row=0, column=1, sticky="w")
@@ -2009,10 +2490,8 @@ class App:
         for seq, f in (("<Control-minus>", 0.8), ("<Control-plus>", 1.25), ("<Control-equal>", 1.25)):
             root.bind_all(seq, lambda e, f=f: self.zoom_by(f))
         root.bind_all("<Control-Key-0>", lambda e: self.set_zoom(1.0))
-        for seq in ("<Control-o>", "<Control-O>"):
-            root.bind_all(seq, lambda e: (self.open_file(), "break")[1])
-        for seq in ("<Control-s>", "<Control-S>"):
-            root.bind_all(seq, lambda e: (self.save_file(), "break")[1])
+        self.bound_shortcuts = []
+        self.bind_shortcuts()
         self.ws.bind("<Configure>", lambda e: self.draw_welcome(), add="+")
         root.bind_all("<MouseWheel>", self.on_wheel)
         root.bind_all("<Button-4>", self.on_wheel)
@@ -2304,6 +2783,12 @@ class App:
         if self._edit_undo_before is not None:
             before, self._edit_undo_before = self._edit_undo_before, None
             self.commit_undo(before)
+        if getattr(self, "find_bar", None) is not None and self.find_bar.winfo_ismapped():
+            uids = find_blocks([b for b, ctx, anc in self.iter_blocks()], self.find_var.get())
+            self.found = uids                                    # Keep the results up to date while editing.
+            if self.found_current not in uids:
+                self.found_current = uids[0] if uids else None
+            self.update_find_count()
         self.render()
         self.update_code()
 
@@ -2337,6 +2822,7 @@ class App:
         r.reset()
         self.used = set()
         r.selected = self.sel
+        r.found, r.found_current = set(self.found), self.found_current
         for s in self.scripts:
             self.draw_script(r, s)
         d = self.drag
@@ -2375,6 +2861,7 @@ class App:
         h = max(c.winfo_height(), (bb[3] if bb else 0) + 250)
         c.configure(scrollregion=(0, 0, w, h))
         self.draw_welcome()
+        self.update_minimap()
 
     # ---------- editable code (code and blocks stay in sync) ----------
     def current_code(self):
@@ -2459,9 +2946,11 @@ class App:
             self.set_code_status(ex)
             return
         self.set_code_status(None)
-        try:                                    # Preserve blocks when only whitespace or comments changed.
-            if ast.dump(tree) == ast.dump(ast.parse(
-                    generate(self.scripts, self.libs, self.paths, self.import_lines))):
+        try:                                    # Preserve blocks when only whitespace changed.
+            generated_src = generate(self.scripts, self.libs, self.paths, self.import_lines)
+            if (ast.dump(tree) == ast.dump(ast.parse(generated_src))      # Same program and same comments:
+                    and list(_collect_comments(src).values()) ==         # keep the layout of the blocks.
+                    list(_collect_comments(generated_src).values())):
                 self._code_undo_before = None
                 return
         except Exception:
@@ -3130,27 +3619,280 @@ class App:
         save_config(self.cfg)
         self.mark_saved()
 
-    def load_example(self):
-        B = Block
-        main = Script(30, 30, [
-            B("start"),
-            B("set", ["total", "0"]),
-            B("for", ["i", B("pyexpr", ["range(1, 6)"])], [
-                B("change", ["total", B("var", ["i"])]),
-                B("print", [B("join", ['"Partial sum: "', B("str", [B("var", ["total"])])])]),
-            ]),
-            B("if", [B("gt", [B("var", ["total"]), "10"])],
-              [B("print", ['"It is greater than 10!"'])]),
-            B("elif", [B("eq", [B("var", ["total"]), "10"])],
-                            [B("print", ['"Exactly 10."'])]),
-                        B("else", [], [B("print", ['"It is less than 10."'])]),
-        ])
-        fn = Script(420, 30, [
-            B("def", ["greet", "name"], [
-                B("print", [B("join", ['"Hello "', B("var", ["name"])])])]),
-        ])
-        call = Script(420, 190, [B("start"), B("call", ["greet", '"Scratch"'])])
-        self.set_scripts([main, fn, call])
+    def load_example(self, name=None):
+        """Replace the workspace with one of the built-in examples (asks before discarding work)."""
+        name = name or next(iter(EXAMPLES))
+        if self.scripts and self.project_state() != self.saved_state:
+            if not messagebox.askyesno("Examples", "Replace the current blocks with the example "
+                                       "'%s'?" % name, parent=self.root):
+                return
+        try:
+            blocks, imports, _ = python_to_project(EXAMPLES[name])
+        except Exception as ex:                           # Never expected: examples are tested.
+            messagebox.showerror("Examples", "Could not load the example:\n%s" % ex)
+            return
+        self.import_lines = []
+        for mod, line in imports:
+            if line not in self.import_lines:
+                self.import_lines.append(line)
+            if mod != "__future__" and self.try_import(mod) and mod not in self.libs:
+                self.libs.append(mod)
+        self.set_scripts([Script(30, 30, [Block("start")] + blocks)])
+        self.project_path = None
+        self.cfg.pop("project_path", None)
+        save_config(self.cfg)
+        self.mark_saved()
+
+    def show_examples_menu(self, anchor):
+        menu = tk.Menu(self.root, tearoff=0)
+        for name in EXAMPLES:
+            menu.add_command(label=name, command=lambda n=name: self.load_example(n))
+        menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height())
+
+    # ---------- recent files ----------
+    def add_recent(self, path):
+        self.cfg["recent"] = push_recent(self.cfg.get("recent", []), path)
+        save_config(self.cfg)
+
+    def show_recent_menu(self, anchor):
+        menu = tk.Menu(self.root, tearoff=0)
+        items = [p for p in self.cfg.get("recent", []) if isinstance(p, str) and os.path.exists(p)]
+        for p in items:
+            menu.add_command(label="%s    —    %s" % (os.path.basename(p), os.path.dirname(p)),
+                             command=lambda p=p: self.open_file(p))
+        if not items:
+            menu.add_command(label="(no recent files)", state="disabled")
+        else:
+            menu.add_separator()
+            menu.add_command(label="Clear the list", command=self.clear_recent)
+        menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height())
+
+    def clear_recent(self):
+        self.cfg["recent"] = []
+        save_config(self.cfg)
+
+    # ---------- keyboard shortcuts ----------
+    def shortcut_map(self):
+        custom = self.cfg.get("shortcuts", {})
+        return {a: (custom.get(a) if isinstance(custom.get(a), str) else d)
+                for a, _, d in SHORTCUT_ACTIONS}
+
+    def shortcut_actions(self):
+        return {"run": self.run, "stop": self.stop, "new": self.new, "open": self.open_file,
+                "save": self.save_file, "find": self.show_find,
+                "find_next": lambda: self.find_step(1), "find_prev": lambda: self.find_step(-1),
+                "shortcuts": self.show_shortcuts}
+
+    def bind_shortcuts(self):
+        for seq in self.bound_shortcuts:
+            try:
+                self.root.unbind_all(seq)
+            except tk.TclError:
+                pass
+        self.bound_shortcuts = []
+        actions = self.shortcut_actions()
+        for action, seq in self.shortcut_map().items():
+            variants = {seq}
+            tail = seq.strip("<>").split("-")[-1]
+            if len(tail) == 1 and tail.isalpha():
+                variants.add(seq[:-2] + tail.upper() + ">")
+            for v in variants:
+                try:
+                    self.root.bind_all(v, lambda e, f=actions[action]: (f(), "break")[1])
+                    self.bound_shortcuts.append(v)
+                except tk.TclError:
+                    pass
+
+    def show_shortcuts(self):
+        """Help window listing the shortcuts; the customizable ones can be changed."""
+        old = getattr(self, "shortcuts_win", None)
+        if old is not None and old.winfo_exists():
+            old.lift()
+            return
+        dialog = self.shortcuts_win = tk.Toplevel(self.root)
+        dialog.title("Keyboard shortcuts")
+        dialog.transient(self.root)
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Customizable shortcuts", font=self.font).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        buttons = {}
+
+        def refresh_buttons():
+            m = self.shortcut_map()
+            for a, b in buttons.items():
+                b.configure(text=seq_label(m[a]))
+
+        def capture(action):
+            b = buttons[action]
+            b.configure(text="Press a key…")
+
+            def on_key(ev):
+                seq = event_to_seq(ev)
+                if seq is None:
+                    return "break"
+                dialog.unbind("<Key>")
+                if ev.keysym == "Escape":
+                    refresh_buttons()
+                    return "break"
+                clash = shortcut_conflicts(self.shortcut_map(), action, seq)
+                if clash:
+                    names = dict((a, l) for a, l, _ in SHORTCUT_ACTIONS)
+                    messagebox.showwarning("Keyboard shortcuts", "%s is already used by “%s”." % (
+                        seq_label(seq), names[clash[0]]), parent=dialog)
+                else:
+                    self.cfg.setdefault("shortcuts", {})[action] = seq
+                    save_config(self.cfg)
+                    self.bind_shortcuts()
+                refresh_buttons()
+                return "break"
+            dialog.bind("<Key>", on_key)
+            dialog.focus_set()
+
+        def reset():
+            self.cfg.pop("shortcuts", None)
+            save_config(self.cfg)
+            self.bind_shortcuts()
+            refresh_buttons()
+
+        for i, (action, label, _) in enumerate(SHORTCUT_ACTIONS, start=1):
+            ttk.Label(body, text=label).grid(row=i, column=0, sticky="w", padx=(0, 18), pady=2)
+            b = ttk.Button(body, width=16, command=lambda a=action: capture(a))
+            b.grid(row=i, column=1, sticky="e", pady=2)
+            buttons[action] = b
+        r = len(SHORTCUT_ACTIONS) + 1
+        ttk.Separator(body).grid(row=r, column=0, columnspan=3, sticky="ew", pady=10)
+        ttk.Label(body, text="Fixed shortcuts", font=self.font).grid(
+            row=r + 1, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        for j, (keys, what) in enumerate(FIXED_SHORTCUTS, start=r + 2):
+            ttk.Label(body, text=what).grid(row=j, column=0, sticky="w", pady=1)
+            ttk.Label(body, text=keys).grid(row=j, column=1, sticky="e", pady=1)
+        foot = ttk.Frame(body)
+        foot.grid(row=r + 2 + len(FIXED_SHORTCUTS), column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        ttk.Button(foot, text="Reset to defaults", command=reset).pack(side="left")
+        ttk.Button(foot, text="Close", command=dialog.destroy).pack(side="right")
+        refresh_buttons()
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        try:
+            self.style_titlebar(dialog)
+        except Exception:
+            pass
+
+    # ---------- minimap ----------
+    MINIMAP_W, MINIMAP_H = 170, 110
+
+    def build_minimap(self, parent):
+        self.minimap = tk.Canvas(parent, width=self.MINIMAP_W, height=self.MINIMAP_H,
+                                 highlightthickness=1, bd=0, cursor="hand2")
+        self.minimap_geo = None
+        self.minimap.bind("<Button-1>", self.minimap_click)
+        self.minimap.bind("<B1-Motion>", self.minimap_click)
+        self.minimap_shown = False
+
+    def set_minimap(self, on):
+        self.minimap_on = bool(on)
+        self.cfg["minimap"] = self.minimap_on
+        save_config(self.cfg)
+        self.update_minimap()
+
+    def update_minimap(self):
+        """Redraw the overview: block outlines and the visible area."""
+        m = getattr(self, "minimap", None)
+        if m is None:
+            return
+        c = self.ws
+        bb = c.bbox("shape") if self.scripts else None
+        if not self.minimap_on or not bb:
+            if self.minimap_shown:
+                m.place_forget()
+                self.minimap_shown = False
+            return
+        if not self.minimap_shown:
+            m.place(relx=1.0, rely=1.0, x=-22, y=-22, anchor="se")
+            self.minimap_shown = True
+        m.configure(bg=c.cget("bg"), highlightbackground=self.BORDER)
+        try:
+            _, _, sw, sh = (float(v) for v in str(c.cget("scrollregion")).split())
+        except ValueError:
+            return
+        W, H = self.MINIMAP_W, self.MINIMAP_H
+        sw, sh = max(sw, 1.0), max(sh, 1.0)
+        k = min((W - 8) / sw, (H - 8) / sh)
+        ox, oy = 4, 4
+        self.minimap_geo = (k, ox, oy, sw, sh)
+        m.delete("all")
+        z = self.zoom
+        for h in self.wsr.hits[:600]:
+            x0, y0 = h[0] * z * k + ox, h[1] * z * k + oy
+            x1, y1 = x0 + max(1.0, h[2] * z * k), y0 + max(1.0, h[3] * z * k)
+            m.create_rectangle(x0, y0, x1, y1, outline="", fill=self.MUTED)
+        vx0, vy0 = c.canvasx(0), c.canvasy(0)
+        vx1, vy1 = vx0 + c.winfo_width(), vy0 + c.winfo_height()
+        m.create_rectangle(vx0 * k + ox, vy0 * k + oy, min(vx1, sw) * k + ox, min(vy1, sh) * k + oy,
+                           outline=self.ACCENT, width=2)
+
+    def minimap_click(self, ev):
+        geo = self.minimap_geo
+        if not geo:
+            return "break"
+        k, ox, oy, sw, sh = geo
+        c = self.ws
+        x = (ev.x - ox) / k - c.winfo_width() / 2
+        y = (ev.y - oy) / k - c.winfo_height() / 2
+        c.xview_moveto(max(0.0, min(1.0, x / sw)))
+        c.yview_moveto(max(0.0, min(1.0, y / sh)))
+        return "break"
+
+    # ---------- drag and drop of files onto the window ----------
+    def enable_file_drop(self):
+        """Windows only: accept .py / project files dropped on the window (no extra package needed)."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32, shell32 = ctypes.windll.user32, ctypes.windll.shell32
+            hwnd = user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+            WM_DROPFILES, GWL_WNDPROC = 0x0233, -4
+            LRESULT = ctypes.c_ssize_t
+            WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+            user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+            user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+            user32.CallWindowProcW.restype = LRESULT
+            user32.CallWindowProcW.argtypes = [ctypes.c_void_p, wintypes.HWND, wintypes.UINT,
+                                               wintypes.WPARAM, wintypes.LPARAM]
+            shell32.DragQueryFileW.argtypes = [ctypes.c_void_p, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
+            shell32.DragFinish.argtypes = [ctypes.c_void_p]
+            old = {}
+
+            def proc(h, msg, wp, lp):
+                if msg == WM_DROPFILES:
+                    files = []
+                    n = shell32.DragQueryFileW(wp, 0xFFFFFFFF, None, 0)
+                    for i in range(n):
+                        buf = ctypes.create_unicode_buffer(1024)
+                        shell32.DragQueryFileW(wp, i, buf, 1024)
+                        files.append(buf.value)
+                    shell32.DragFinish(wp)
+                    self.root.after(10, lambda: self.open_dropped(files))
+                    return 0
+                return user32.CallWindowProcW(old["p"], h, msg, wp, lp)
+
+            self._drop_proc = WNDPROC(proc)                         # Keep a reference alive.
+            old["p"] = user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC,
+                                                ctypes.cast(self._drop_proc, ctypes.c_void_p))
+            shell32.DragAcceptFiles(hwnd, True)
+        except Exception:
+            pass
+
+    def open_dropped(self, files):
+        for f in files:
+            if f.lower().endswith((".py", ".pyw", ".json")):
+                self.open_file(f)
+                return
+        if files:
+            messagebox.showinfo("Open", "Drop a Python (.py) file or a ScratchPy project (.json).",
+                                parent=self.root)
 
     def save_as(self):
         return self.save_file(save_as=True)
@@ -3173,7 +3915,7 @@ class App:
             return False
         self.project_path = os.path.abspath(path)
         self.cfg["project_path"] = self.project_path
-        save_config(self.cfg)
+        self.add_recent(self.project_path)
         self.mark_saved()
         self.autosaved_state = self.project_state()
         try:
@@ -3229,7 +3971,7 @@ class App:
         self.set_scripts([Script(30, 30, [Block("start")] + blocks)])
         self.project_path = None
         self.cfg.pop("project_path", None)
-        save_config(self.cfg)
+        self.add_recent(path)
         self.mark_saved()
         if new_libs:
             self.search_var.set("")
@@ -3275,7 +4017,7 @@ class App:
         if os.path.normcase(loaded_path) != os.path.normcase(os.path.abspath(self.autosave_path)):
             self.project_path = loaded_path
             self.cfg["project_path"] = self.project_path
-            save_config(self.cfg)
+            self.add_recent(loaded_path)
         self.autosaved_state = self.project_state()
 
     def export_py(self):
@@ -3306,6 +4048,9 @@ class App:
         c.configure(state="disabled")
 
     def run(self):
+        if "console" in self.panel_hidden:          # The output must be visible.
+            self.set_panel_visible("console", True)
+        self.console_ai_btn.pack_forget()
         self.stop(quiet=True)
         self.console.configure(state="normal")
         self.console.delete("1.0", "end")
@@ -3377,6 +4122,10 @@ class App:
             self.console_write("\n[Program finished]\n" if end == 0
                                else "\n[Program finished with an error]\n",
                                None if end == 0 else "err")
+            if end != 0:
+                self.console_ai_btn.pack(side="right", padx=6)
+            else:
+                self.console_ai_btn.pack_forget()
         self.root.after(5 if busy else 40, self.poll)
 
     def stop(self, quiet=False):
@@ -3450,12 +4199,14 @@ class App:
             c.mark_unset("think")
         c.configure(state="disabled")
 
-    def ask_gemini(self, ev=None):
-        prompt = self.ai_var.get().strip()
+    def ask_gemini(self, ev=None, prompt=None, display=None):
+        from_entry = prompt is None
+        prompt = (self.ai_var.get() if from_entry else prompt).strip()
         if not prompt or self.ai_busy:
             return
-        self.ai_var.set("")
-        self.ai_write("You: " + prompt, "user")
+        if from_entry:
+            self.ai_var.set("")
+        self.ai_write("You: " + (display or prompt), "user")
         self.ai_history.append(("user", prompt))
         console = self.console.get("1.0", "end-1c")
         if "Traceback" in console or "terminated with an error" in console:
@@ -3527,9 +4278,76 @@ class App:
             self._code_job = None
         self.apply_code()
 
+    def ai_quick(self, kind):
+        """Explain / Fix / Optimize: the selected code, or the whole program when nothing is selected."""
+        if "assistant" in self.panel_hidden:
+            self.set_panel_visible("assistant", True)
+        label, text = QUICK_PROMPTS[kind]
+        try:
+            snippet = self.code.get("sel.first", "sel.last")
+        except tk.TclError:
+            snippet = ""
+        if snippet.strip():
+            self.ask_gemini(prompt="%s\n```python\n%s\n```" % (text, snippet.strip("\n")),
+                            display="%s (selected code)" % label)
+        else:
+            self.ask_gemini(prompt=text, display="%s (whole program)" % label)
+
+    def ai_fix_console(self):
+        if "assistant" in self.panel_hidden:
+            self.set_panel_visible("assistant", True)
+        self.ask_gemini(prompt="My program stopped with an error (see the console output). "
+                               "Explain what went wrong and give the complete corrected program.",
+                        display="Fix the console error")
+
+    def show_diff(self, old, new):
+        """Window comparing the current code with the suggestion; returns True to apply it."""
+        lines = diff_lines(old, new)
+        if not lines:
+            messagebox.showinfo("AI assistant", "The suggested code is identical to your code.", parent=self.root)
+            return False
+        pal = self.theme_colors
+        dialog = tk.Toplevel(self.root, bg=pal["BG"])
+        dialog.title("Review the suggested changes")
+        dialog.transient(self.root)
+        dialog.geometry("760x460")
+        result = {"ok": False}
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Lines in red will be removed, lines in green will be added.").pack(anchor="w")
+        btns = ttk.Frame(body)
+        btns.pack(side="bottom", anchor="e", pady=(8, 0))
+        box = ttk.Frame(body)
+        box.pack(fill="both", expand=True, pady=(6, 0))
+        sb = ttk.Scrollbar(box, orient="vertical")
+        sb.pack(side="right", fill="y")
+        txt = tk.Text(box, bg=pal["EDIT"], fg=pal["FG"], font=tkfont.nametofont("TkFixedFont"), wrap="none",
+                      bd=0, padx=8, pady=6, yscrollcommand=sb.set)
+        sb.configure(command=txt.yview)
+        txt.pack(fill="both", expand=True)
+        dark = split_theme(self.theme_name)[1] == "dark"
+        txt.tag_configure("add", background="#17422a" if dark else "#d3f5df")
+        txt.tag_configure("del", background="#52201f" if dark else "#fcdcda")
+        txt.tag_configure("hunk", foreground=pal["ACCENT"])
+        for tag, line in lines:
+            txt.insert("end", line + "\n", tag)
+        txt.configure(state="disabled")
+
+        def finish(ok):
+            result["ok"] = ok
+            dialog.destroy()
+
+        ttk.Button(btns, text="Apply", command=lambda: finish(True)).pack(side="left", padx=(0, 6))
+        ttk.Button(btns, text="Cancel", command=lambda: finish(False)).pack(side="left")
+        dialog.bind("<Escape>", lambda e: finish(False))
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        self.style_titlebar(dialog)
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+        return result["ok"]
+
     def suggest_code_injection(self, new_code):
-        if not messagebox.askyesno("AI assistant", "The assistant suggested code. Apply it to the editor?\n"
-                       "(You can undo this later.)", parent=self.root):
+        if not self.show_diff(self.current_code(), new_code.rstrip("\n") + "\n"):
             return
         self.ai_backup = self.current_code()
         self.set_code_text(new_code.rstrip("\n") + "\n")
@@ -3633,6 +4451,8 @@ def main():
             pass
     root = tk.Tk()
     app = App(root)
+    root.update_idletasks()
+    app.enable_file_drop()
     if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".py"):
         app.open_file(sys.argv[1])
     root.mainloop()
