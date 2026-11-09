@@ -1707,6 +1707,49 @@ def system_python():
     return None
 
 
+FROZEN_PYTHON = None          # In the installed .exe: the Python that built it (set at startup).
+_PY_INFO = ("import sys, json, site; print(json.dumps({'version': list(sys.version_info[:2]), "
+            "'base': sys.base_prefix, 'paths': sys.path + [site.getusersitepackages()]}))")
+
+
+def setup_frozen_python():
+    """Packaged .exe: make every module of the Python that built it importable (standard library,
+    pip packages, compiled ones like numpy). Return that interpreter, or None when unavailable."""
+    if not getattr(sys, "frozen", False):
+        return None
+    py = None
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "python.txt"),
+                  encoding="utf-8") as f:
+            py = f.read().strip()
+    except OSError:
+        pass
+    if not py or not os.path.isfile(py):
+        py = system_python()
+    if not py:
+        return None
+    try:
+        out = subprocess.run([py, "-c", _PY_INFO], capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        info = json.loads(out.stdout)
+    except Exception:
+        return None
+    if tuple(info.get("version", ())) != tuple(sys.version_info[:2]):
+        return None                                   # Different Python version: compiled modules would not load.
+    for p in info.get("paths", []):
+        if p and not p.lower().endswith(".zip") and os.path.isdir(p) and p not in sys.path:
+            sys.path.append(p)                        # Appended: the modules bundled in the .exe keep priority.
+    base = info.get("base", "")
+    for d in (base, os.path.join(base, "DLLs")):
+        if hasattr(os, "add_dll_directory") and os.path.isdir(d):
+            try:
+                os.add_dll_directory(d)
+            except OSError:
+                pass
+    importlib.invalidate_caches()
+    return py
+
+
 def python_command(path):
     """Build the command that runs generated code (system Python or the frozen executable)."""
     if not getattr(sys, "frozen", False):
@@ -3239,8 +3282,9 @@ class App:
         self.root.configure(cursor="watch")
         self.root.update()
         try:
-            r = subprocess.run([sys.executable, "-m", "pip", "install", pkg],
-                               capture_output=True, text=True)
+            r = subprocess.run([FROZEN_PYTHON or sys.executable, "-m", "pip", "install", pkg],
+                               capture_output=True, text=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as ex:
             return False, str(ex)
         finally:
@@ -3305,7 +3349,7 @@ class App:
             import_library(name)
             return True
         except ModuleNotFoundError:
-            if getattr(sys, "frozen", False):
+            if getattr(sys, "frozen", False) and not FROZEN_PYTHON:
                 messagebox.showerror(
                     "Import", "'%s' is not included in this .exe application.\n"
                     "Use scratchpy.py with Python, or rebuild the .exe with "
@@ -5101,6 +5145,7 @@ class App:
 
 
 def main():
+    global FROZEN_PYTHON
     if len(sys.argv) > 2 and sys.argv[1] == "--run":     # Run a program from the frozen executable.
         sys.stdin = open(0, "r", encoding="utf-8", closefd=False)
         sys.stdout = open(1, "w", encoding="utf-8", buffering=1, closefd=False)
@@ -5122,6 +5167,7 @@ def main():
         except Exception:
             pass
     root = tk.Tk()
+    FROZEN_PYTHON = setup_frozen_python()
     set_language(load_config().get("language", "en"))
     install_i18n()
     apply_block_language()
