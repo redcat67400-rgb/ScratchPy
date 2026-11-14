@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.14
+# Version: V26.15
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -873,6 +873,8 @@ I18N_ROWS = [
     ("Scratch import", "Import Scratch", "Scratch-Import", "Importazione Scratch", "Импорт Scratch", "Importación de Scratch", "Scratch 导入", "Scratch の読み込み"),
     ("Scripts started by the green flag run one after the other. Other scripts (keys, clicks, messages) became functions.", "Les scripts lancés par le drapeau vert s'exécutent l'un après l'autre. Les autres scripts (touches, clics, messages) sont devenus des fonctions.", "Skripte, die mit der grünen Flagge starten, laufen nacheinander. Andere Skripte (Tasten, Klicks, Nachrichten) wurden zu Funktionen.", "Gli script avviati dalla bandiera verde vengono eseguiti uno dopo l'altro. Gli altri script (tasti, clic, messaggi) sono diventati funzioni.", "Скрипты, запускаемые зелёным флажком, выполняются друг за другом. Остальные скрипты (клавиши, щелчки, сообщения) стали функциями.", "Los scripts iniciados con la bandera verde se ejecutan uno tras otro. Los demás scripts (teclas, clics, mensajes) se convirtieron en funciones.", "由绿旗启动的脚本会依次运行。其他脚本(按键、点击、消息)已变为函数。", "緑の旗で始まるスクリプトは順番に実行されます。その他のスクリプト(キー、クリック、メッセージ)は関数になりました。"),
     ("Some blocks have no Python equivalent and were kept as comments: %s", "Certains blocs n'ont pas d'équivalent Python et ont été gardés en commentaires : %s", "Einige Blöcke haben kein Python-Äquivalent und wurden als Kommentare beibehalten: %s", "Alcuni blocchi non hanno un equivalente Python e sono stati mantenuti come commenti: %s", "У некоторых блоков нет аналога в Python, они сохранены как комментарии: %s", "Algunos bloques no tienen equivalente en Python y se conservaron como comentarios: %s", "部分积木没有对应的 Python,已保留为注释:%s", "一部のブロックには対応する Python がなく、コメントとして残しました:%s"),
+    ("What's new in %s", "Nouveautés de %s", "Neuerungen in %s", "Novità di %s", "Что нового в %s", "Novedades de %s", "%s 的新功能", "%s の新機能"),
+    ("What's new", "Nouveautés", "Neuerungen", "Novità", "Что нового", "Novedades", "新功能", "新機能"),
     ("Greeting function", "Fonction de salutation", "Begrüßungsfunktion", "Funzione di saluto", "Функция приветствия",
      "Función de saludo", "问候函数", "あいさつ関数"),
     ("Examples", "Exemples", "Beispiele", "Esempi", "Примеры", "Ejemplos", "示例", "サンプル"),
@@ -3140,6 +3142,91 @@ def load_scratch_file(path, folder):
     return source, unsupported, extracted
 
 
+# Release notes shown after an update and in the update prompt. A literal dict: it is also read
+# (without running it) from the downloaded source of a newer version. Lines starting with "# " are headings.
+RELEASE_NOTES = {
+    "V26.14": {
+        "en": [
+            "# New",
+            "Assets: add images, sounds, fonts and text files (Panels > Assets, or drag and drop onto the window). A new Assets block category gives one block per file.",
+            "Scratch import: open Scratch 2 (.sb2) and Scratch 3 (.sb3) projects. Scripts become Python, then blocks; costumes and sounds become assets.",
+            "Reorder project tabs by dragging them.",
+            "After an update, the release notes of the new version are shown.",
+            "# Changes",
+            "Programs now run in the project folder, so assets/... paths work.",
+            "Switching tabs happens when the mouse button is released.",
+        ],
+        "fr": [
+            "# Nouveautés",
+            "Assets : ajoute des images, sons, polices et fichiers texte (Panneaux > Assets, ou glisser-déposer sur la fenêtre). Une nouvelle catégorie de blocs Assets donne un bloc par fichier.",
+            "Import Scratch : ouvre des projets Scratch 2 (.sb2) et Scratch 3 (.sb3). Les scripts deviennent du Python, puis des blocs ; costumes et sons deviennent des assets.",
+            "Réorganise les onglets de projet en les faisant glisser.",
+            "Après une mise à jour, les notes de version s'affichent.",
+            "# Changements",
+            "Les programmes s'exécutent maintenant dans le dossier du projet : les chemins assets/... fonctionnent.",
+            "Le changement d'onglet se fait au relâchement du bouton de la souris.",
+        ],
+    },
+    "V26.13": {
+        "en": [
+            "# New",
+            "Project tabs, step-by-step execution (F10) with a variables panel, and runtime errors highlighted on blocks.",
+            "My blocks: your own functions appear in the palette.",
+            "Clean up and fit-to-window buttons; collapse and expand blocks; export the workspace as PNG or SVG.",
+            "Undo history window, optional Windows light/dark theme, open a Python file from a GitHub link.",
+            "Guided challenges with automatic checking; experimental turtle/pygame window inside ScratchPy.",
+        ],
+        "fr": [
+            "# Nouveautés",
+            "Onglets de projet, exécution pas à pas (F10) avec panneau des variables, erreurs d'exécution surlignées sur les blocs.",
+            "Mes blocs : tes propres fonctions apparaissent dans la palette.",
+            "Boutons Ranger et Ajuster à la fenêtre ; replier et déplier les blocs ; export de l'espace de travail en PNG ou SVG.",
+            "Historique des modifications, thème clair/sombre de Windows en option, ouverture d'un fichier Python depuis un lien GitHub.",
+            "Défis guidés avec vérification automatique ; fenêtre turtle/pygame intégrée à ScratchPy (expérimental).",
+        ],
+    },
+    "V26.12": {
+        "en": [
+            "# New",
+            "Interface languages: English, French, German, Italian, Russian, Spanish, Chinese and Japanese.",
+            "Importing a Python program now uses as few Python line / expression / block blocks as possible.",
+        ],
+        "fr": [
+            "# Nouveautés",
+            "Langues de l'interface : anglais, français, allemand, italien, russe, espagnol, chinois et japonais.",
+            "L'import d'un programme Python utilise le moins possible de blocs ligne / expression / bloc Python.",
+        ],
+    },
+}
+
+
+def release_notes_from_source(source, version):
+    """The notes of `version` found in a ScratchPy source text, without running it (None if absent)."""
+    try:
+        for node in ast.parse(source).body:
+            if (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "RELEASE_NOTES"
+                                                     for t in node.targets)):
+                entry = ast.literal_eval(node.value).get(version)
+                return entry if isinstance(entry, dict) else None
+    except (SyntaxError, ValueError):
+        pass
+    return None
+
+
+def pick_notes(entry, lang):
+    """The note lines in the interface language (English when it is not available)."""
+    lines = (entry or {}).get(lang) or (entry or {}).get("en") or []
+    return [x for x in lines if isinstance(x, str)]
+
+
+def notes_text(lines):
+    out = []
+    for line in lines:
+        out.append("\n" + line[2:] if line.startswith("# ") and out else line[2:] if line.startswith("# ")
+                   else "• " + line)
+    return "\n".join(out)
+
+
 def reorder_tabs(items, src, pos):
     """New order after dragging item `src` to the insertion position `pos` (0..len, in the old numbering)."""
     item = items[src]
@@ -3603,6 +3690,7 @@ class App:
         root.after(40, self.poll)
         root.after(100, self.ai_poll)
         root.after(1500, self.check_for_updates)
+        root.after(2500, self.show_whats_new)
         root.after(1000, self.restore_autosave)
         self.autosave_job = root.after(self.autosave_interval, self.autosave_tick)
 
@@ -3698,13 +3786,50 @@ class App:
             messagebox.showerror("Updates", "Could not check for updates:\n%s" % error,
                                  parent=self.root)
             return
-        if messagebox.askyesno(
-                "Update available",
-                "ScratchPy %s is available. You are using %s. Install the update now?" %
-                (remote_version, APP_VERSION), parent=self.root):
+        message = tr("ScratchPy %s is available. You are using %s. Install the update now?") % (
+            remote_version, APP_VERSION)
+        try:
+            entry = release_notes_from_source(payload.decode("utf-8-sig"), remote_version)
+            lines = pick_notes(entry, LANG)
+            if lines:
+                message = notes_text(lines)[:1400] + "\n\n" + message
+                message = tr("What's new in %s") % remote_version + ":\n\n" + message
+        except Exception:
+            pass
+        if messagebox.askyesno("Update available", message, parent=self.root):
             self.update_payload = payload
             self.update_installer_payload = installer_payload
             self.on_close()
+
+    def show_whats_new(self, force=False):
+        """Release notes of the running version: once after each update, or on demand from the About window."""
+        entry = RELEASE_NOTES.get(APP_VERSION)
+        if not force:
+            if not entry or self.cfg.get("last_seen_version") == APP_VERSION:
+                return
+            self.cfg["last_seen_version"] = APP_VERSION
+            save_config(self.cfg)
+        lines = pick_notes(entry, LANG)
+        if not lines:
+            return
+        win = tk.Toplevel(self.root, bg=self.BG)
+        win.title(tr("What's new in %s") % APP_VERSION)
+        win.transient(self.root)
+        body = ttk.Frame(win, padding=14)
+        body.pack(fill="both", expand=True)
+        text = tk.Text(body, width=70, height=18, wrap="word", bg=self.EDIT, fg=self.FG, relief="flat",
+                       highlightthickness=0, padx=10, pady=8, font=self.efont)
+        text.pack(fill="both", expand=True)
+        text.tag_configure("head", font=self.font, spacing1=6, spacing3=4)
+        for i, line in enumerate(lines):
+            if line.startswith("# "):
+                text.insert("end", ("\n" if i else "") + line[2:] + "\n", "head")
+            else:
+                text.insert("end", "\u2022 " + line + "\n")
+        text.configure(state="disabled")
+        ttk.Button(body, text="Close", command=win.destroy).pack(anchor="e", pady=(10, 0))
+        win.bind("<Escape>", lambda e: win.destroy())
+        self.style_titlebar(win)
 
     def show_about(self):
         dialog = tk.Toplevel(self.root)
@@ -3719,12 +3844,14 @@ class App:
         actions.pack(fill="x")
         ttk.Button(actions, text="Check for updates",
                    command=lambda: self.check_for_updates(manual=True)).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="What's new", command=lambda: self.show_whats_new(force=True)).pack(
+            side="left", padx=(0, 6))
         ttk.Button(actions, text="GitHub",
                    command=lambda: webbrowser.open("https://github.com/redcat67400-rgb/ScratchPy")).pack(
                        side="left", padx=(0, 6))
         ttk.Button(actions, text="Close", command=dialog.destroy).pack(side="right")
         ToolTip(actions.winfo_children()[0], "Check GitHub for a newer ScratchPy version")
-        ToolTip(actions.winfo_children()[1], "Open the ScratchPy GitHub repository")
+        ToolTip(actions.winfo_children()[2], "Open the ScratchPy GitHub repository")
         dialog.bind("<Escape>", lambda event: dialog.destroy())
         dialog.update_idletasks()
         x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_width()) // 2
