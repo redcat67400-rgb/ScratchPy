@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.16
+# Version: V26.17
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -867,7 +867,7 @@ I18N_ROWS = [
     ("Font", "Police", "Schrift", "Font", "Шрифт", "Fuente", "字体", "フォント"),
     ("Text file", "Fichier texte", "Textdatei", "File di testo", "Текстовый файл", "Archivo de texto", "文本文件", "テキストファイル"),
     ("The assets folder was copied next to the exported file.", "Le dossier assets a été copié à côté du fichier exporté.", "Der Assets-Ordner wurde neben die exportierte Datei kopiert.", "La cartella assets è stata copiata accanto al file esportato.", "Папка assets скопирована рядом с экспортированным файлом.", "La carpeta assets se copió junto al archivo exportado.", "assets 文件夹已复制到导出文件旁边。", "assets フォルダーを書き出したファイルの横にコピーしました。"),
-    ("Drop a Python (.py) file, a ScratchPy project (.json), or images, sounds and fonts to add them as assets.", "Dépose un fichier Python (.py), un projet ScratchPy (.json), ou des images, sons et polices pour les ajouter comme assets.", "Ziehe eine Python-Datei (.py), ein ScratchPy-Projekt (.json) oder Bilder, Töne und Schriften hierher, um sie als Assets hinzuzufügen.", "Trascina un file Python (.py), un progetto ScratchPy (.json) oppure immagini, suoni e font per aggiungerli come risorse.", "Перетащите файл Python (.py), проект ScratchPy (.json) или изображения, звуки и шрифты, чтобы добавить их как ресурсы.", "Suelta un archivo Python (.py), un proyecto de ScratchPy (.json) o imágenes, sonidos y fuentes para añadirlos como recursos.", "拖入 Python 文件(.py)、ScratchPy 项目(.json),或图片、声音、字体以将其添加为资源。", "Python ファイル(.py)、ScratchPy プロジェクト(.json)、または画像・音声・フォントをドロップするとアセットに追加されます。"),
+    ("Drop a Python (.py) file, a ScratchPy project (.spyp), or images, sounds and fonts to add them as assets.", "Dépose un fichier Python (.py), un projet ScratchPy (.spyp), ou des images, sons et polices pour les ajouter comme assets.", "Ziehe eine Python-Datei (.py), ein ScratchPy-Projekt (.spyp) oder Bilder, Töne und Schriften hierher, um sie als Assets hinzuzufügen.", "Trascina un file Python (.py), un progetto ScratchPy (.spyp) oppure immagini, suoni e font per aggiungerli come risorse.", "Перетащите файл Python (.py), проект ScratchPy (.spyp) или изображения, звуки и шрифты, чтобы добавить их как ресурсы.", "Suelta un archivo Python (.py), un proyecto de ScratchPy (.spyp) o imágenes, sonidos y fuentes para añadirlos como recursos.", "拖入 Python 文件(.py)、ScratchPy 项目(.spyp),或图片、声音、字体以将其添加为资源。", "Python ファイル(.py)、ScratchPy プロジェクト(.spyp)、または画像・音声・フォントをドロップするとアセットに追加されます。"),
     ("Could not read this Scratch project:\n%s", "Impossible de lire ce projet Scratch :\n%s", "Dieses Scratch-Projekt konnte nicht gelesen werden:\n%s", "Impossibile leggere questo progetto Scratch:\n%s", "Не удалось прочитать этот проект Scratch:\n%s", "No se pudo leer este proyecto de Scratch:\n%s", "无法读取此 Scratch 项目:\n%s", "この Scratch プロジェクトを読み込めませんでした:\n%s"),
     ("This file is not a Scratch project.", "Ce fichier n'est pas un projet Scratch.", "Diese Datei ist kein Scratch-Projekt.", "Questo file non è un progetto Scratch.", "Этот файл не является проектом Scratch.", "Este archivo no es un proyecto de Scratch.", "此文件不是 Scratch 项目。", "このファイルは Scratch プロジェクトではありません。"),
     ("This Scratch project is too large.", "Ce projet Scratch est trop volumineux.", "Dieses Scratch-Projekt ist zu groß.", "Questo progetto Scratch è troppo grande.", "Этот проект Scratch слишком большой.", "Este proyecto de Scratch es demasiado grande.", "此 Scratch 项目太大。", "この Scratch プロジェクトは大きすぎます。"),
@@ -905,6 +905,17 @@ I18N_ROWS = [
     ("Developer mode: this version (%s) is newer than the one on GitHub (%s).", "Mode développeur : cette version (%s) est plus récente que celle de GitHub (%s).", "Entwicklermodus: Diese Version (%s) ist neuer als die auf GitHub (%s).", "Modalità sviluppatore: questa versione (%s) è più recente di quella su GitHub (%s).", "Режим разработчика: эта версия (%s) новее версии на GitHub (%s).", "Modo desarrollador: esta versión (%s) es más reciente que la de GitHub (%s).", "开发者模式:此版本(%s)比 GitHub 上的版本(%s)更新。", "開発者モード:このバージョン(%s)は GitHub のバージョン(%s)より新しいです。"),
     ("You are using a version newer than GitHub's (%s): developer mode is on.", "Tu utilises une version plus récente que celle de GitHub (%s) : le mode développeur est activé.", "Du verwendest eine neuere Version als die auf GitHub (%s): Der Entwicklermodus ist aktiv.", "Stai usando una versione più recente di quella su GitHub (%s): la modalità sviluppatore è attiva.", "Вы используете версию новее, чем на GitHub (%s): включён режим разработчика.", "Usas una versión más reciente que la de GitHub (%s): el modo desarrollador está activado.", "你使用的版本比 GitHub 上的(%s)更新:已启用开发者模式。", "GitHub のバージョン(%s)より新しいバージョンを使っています:開発者モードが有効です。"),
     ("Updates can only be installed on Windows.", "Les mises à jour ne peuvent être installées que sous Windows.", "Updates können nur unter Windows installiert werden.", "Gli aggiornamenti possono essere installati solo su Windows.", "Обновления можно устанавливать только в Windows.", "Las actualizaciones solo se pueden instalar en Windows.", "更新只能在 Windows 上安装。", "アップデートは Windows でのみインストールできます。"),
+    ("Files", "Fichiers", "Dateien", "File", "Файлы", "Archivos", "文件", "ファイル"),
+    ("Current project: %s", "Projet actuel : %s", "Aktuelles Projekt: %s", "Progetto attuale: %s", "Текущий проект: %s", "Proyecto actual: %s", "当前项目:%s", "現在のプロジェクト:%s"),
+    ("Not saved yet", "Pas encore enregistré", "Noch nicht gespeichert", "Non ancora salvato", "Ещё не сохранён", "Aún sin guardar", "尚未保存", "まだ保存されていません"),
+    ("Recent files", "Fichiers récents", "Zuletzt geöffnet", "File recenti", "Недавние файлы", "Archivos recientes", "最近的文件", "最近のファイル"),
+    ("Python code copied.", "Code Python copié.", "Python-Code kopiert.", "Codice Python copiato.", "Код Python скопирован.", "Código Python copiado.", "已复制 Python 代码。", "Python コードをコピーしました。"),
+    ("Compiled Python files (.pyc) cannot be opened.", "Les fichiers Python compilés (.pyc) ne peuvent pas être ouverts.", "Kompilierte Python-Dateien (.pyc) können nicht geöffnet werden.", "I file Python compilati (.pyc) non possono essere aperti.", "Скомпилированные файлы Python (.pyc) открыть нельзя.", "Los archivos de Python compilados (.pyc) no se pueden abrir.", "无法打开已编译的 Python 文件(.pyc)。", "コンパイル済み Python ファイル(.pyc)は開けません。"),
+    ("This file is not a ScratchPy project.", "Ce fichier n'est pas un projet ScratchPy.", "Diese Datei ist kein ScratchPy-Projekt.", "Questo file non è un progetto ScratchPy.", "Этот файл не является проектом ScratchPy.", "Este archivo no es un proyecto de ScratchPy.", "此文件不是 ScratchPy 项目。", "このファイルは ScratchPy プロジェクトではありません。"),
+    ("This project is too large.", "Ce projet est trop volumineux.", "Dieses Projekt ist zu groß.", "Questo progetto è troppo grande.", "Этот проект слишком большой.", "Este proyecto es demasiado grande.", "此项目太大。", "このプロジェクトは大きすぎます。"),
+    ("Some assets already existed with different content and were kept: %d", "Certains assets existaient déjà avec un contenu différent et ont été conservés : %d", "Einige Assets existierten bereits mit anderem Inhalt und wurden beibehalten: %d", "Alcune risorse esistevano già con contenuto diverso e sono state mantenute: %d", "Некоторые ресурсы уже существовали с другим содержимым и были сохранены: %d", "Algunos recursos ya existían con contenido distinto y se conservaron: %d", "部分资源已存在且内容不同,已保留原文件:%d", "一部のアセットは内容の異なる同名のものが既にあったため、そのまま残しました:%d"),
+    ("This Gemini module is too busy, please use another one.", "Ce module Gemini est trop utilisé, utilisez-en un autre.", "Dieses Gemini-Modul ist überlastet, bitte verwende ein anderes.", "Questo modulo Gemini è troppo usato, usane un altro.", "Этот модуль Gemini слишком загружен, используйте другой.", "Este módulo de Gemini está demasiado ocupado, usa otro.", "此 Gemini 模块使用过多,请换一个。", "この Gemini モジュールは混み合っています。別のものを使ってください。"),
+    ("Please wait a minute while the chatbot wakes up.", "Merci de patienter une minute, le temps que le chatbot se réveille.", "Bitte warte eine Minute, bis der Chatbot aufgewacht ist.", "Attendi un minuto, il chatbot si sta svegliando.", "Подождите минуту, пока чат-бот проснётся.", "Espera un minuto mientras el chatbot se despierta.", "请稍等一分钟,聊天机器人正在唤醒。", "チャットボットが起動するまで 1 分ほどお待ちください。"),
     ("Greeting function", "Fonction de salutation", "Begrüßungsfunktion", "Funzione di saluto", "Функция приветствия",
      "Función de saludo", "问候函数", "あいさつ関数"),
     ("Examples", "Exemples", "Beispiele", "Esempi", "Примеры", "Ejemplos", "示例", "サンプル"),
@@ -1081,9 +1092,9 @@ I18N_ROWS = [
      "Este archivo importa «%s», un módulo situado junto a él.\nCrear sus bloques lo ejecutará en el editor. ¿Continuar?",
      "此文件导入了同目录下的模块“%s”。\n创建其积木会在编辑器中执行该模块。继续吗？",
      "このファイルは隣にあるモジュール「%s」をインポートしています。\nブロックを作成するとエディターで実行されます。続行しますか？"),
-    ("Drop a Python (.py) file or a ScratchPy project (.json).", "Dépose un fichier Python (.py) ou un projet ScratchPy (.json).",
-     "Ziehe eine Python-Datei (.py) oder ein ScratchPy-Projekt (.json) hierher.", "Trascina un file Python (.py) o un progetto ScratchPy (.json).",
-     "Перетащите файл Python (.py) или проект ScratchPy (.json).", "Suelta un archivo de Python (.py) o un proyecto de ScratchPy (.json).",
+    ("Drop a Python (.py) file or a ScratchPy project (.spyp).", "Dépose un fichier Python (.py) ou un projet ScratchPy (.spyp).",
+     "Ziehe eine Python-Datei (.py) oder ein ScratchPy-Projekt (.spyp) hierher.", "Trascina un file Python (.py) o un progetto ScratchPy (.spyp).",
+     "Перетащите файл Python (.py) или проект ScratchPy (.spyp).", "Suelta un archivo de Python (.py) o un proyecto de ScratchPy (.spyp).",
      "请拖入 Python (.py) 文件或 ScratchPy 项目 (.json)。", "Python (.py) ファイルまたは ScratchPy プロジェクト (.json) をドロップしてください。"),
     ("Restore autosave?", "Restaurer la sauvegarde automatique ?", "Automatische Sicherung wiederherstellen?",
      "Ripristinare il salvataggio automatico?", "Восстановить автосохранение?", "¿Restaurar el guardado automático?",
@@ -1985,6 +1996,7 @@ def python_command(path):
 #  AI assistant: ScratchPy server client
 # --------------------------------------------------------------------------
 ASSISTANT_URL = "https://scratchpy-server.onrender.com/v1/ask"
+ASSISTANT_HEALTH_URL = "https://scratchpy-server.onrender.com/health"
 DEFAULT_MODELS = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash-lite"]
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".scratchpy", "config.json")
 
@@ -3251,6 +3263,24 @@ def load_scratch_file(path, folder):
 # Release notes shown after an update and in the update prompt. A literal dict: it is also read
 # (without running it) from the downloaded source of a newer version. Lines starting with "# " are headings.
 RELEASE_NOTES = {
+    "V26.17": {
+        "en": [
+            "# New",
+            "Files tab (next to Assets): save, save as, open, new, open from a link, export as .py or image, copy the Python code, and a list of recent files, all in one place.",
+            "An About ScratchPy button at the bottom of the Settings tab.",
+            "Clearer assistant messages after an HTTP 502 error: 'module too busy, use another one' or 'wait a minute while the chatbot wakes up'.",
+            "Opens every kind of Python file: .py, .pyw, .pyi, .py3, .pyt and extension-less scripts with a python shebang.",
+            "New project format .spyp (ScratchPyProject): one file that holds the project and its assets. Older .json projects still open.",
+        ],
+        "fr": [
+            "# Nouveautés",
+            "Onglet Fichiers (à côté d'Assets) : enregistrer, enregistrer sous, ouvrir, nouveau, ouvrir depuis un lien, exporter en .py ou en image, copier le code Python, et liste des fichiers récents, au même endroit.",
+            "Un bouton À propos de ScratchPy en bas de l'onglet Paramètres.",
+            "Messages plus clairs de l'assistant après une erreur HTTP 502 : « module trop utilisé, utilisez-en un autre » ou « patientez une minute, le chatbot se réveille ».",
+            "Ouvre tous les types de fichiers Python : .py, .pyw, .pyi, .py3, .pyt et les scripts sans extension avec une ligne shebang python.",
+            "Nouveau format de projet .spyp (ScratchPyProject) : un seul fichier contient le projet et ses assets. Les anciens projets .json s'ouvrent toujours.",
+        ],
+    },
     "V26.16": {
         "en": [
             "# New",
@@ -3345,6 +3375,110 @@ def is_developer_build(local, remote):
     """True when this program's version is newer than the one published on GitHub."""
     a, b = version_key(local), version_key(remote)
     return a is not None and b is not None and a > b
+
+
+# --------------------------------------------------------------------------
+# File types: every kind of Python source file, and the .spyp project format
+# --------------------------------------------------------------------------
+PYTHON_EXTENSIONS = (".py", ".pyw", ".pyi", ".py3", ".pyt")
+PROJECT_EXTENSIONS = (".spyp", ".json")                  # .json: projects saved by older versions.
+SCRATCH_EXTENSIONS = (".sb2", ".sb3")
+MAX_PROJECT_JSON = 30 * 1024 * 1024
+
+
+def is_python_file(path):
+    """A Python source file: a known extension, or a script with a python shebang and no other known type."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in PYTHON_EXTENSIONS:
+        return True
+    if ext in PROJECT_EXTENSIONS + SCRATCH_EXTENSIONS + (".pyc", ".pyo", ".pyz") or asset_kind(path):
+        return False
+    try:
+        with open(path, "rb") as f:
+            first = f.readline(200)
+    except OSError:
+        return False
+    return first.startswith(b"#!") and b"python" in first.lower()
+
+
+def is_openable_file(path):
+    ext = os.path.splitext(path)[1].lower()
+    return ext in PROJECT_EXTENSIONS + SCRATCH_EXTENSIONS or is_python_file(path)
+
+
+def write_project_file(path, data, assets_dir=None):
+    """Save a project. .spyp = a zip holding project.json and the assets folder; .json = plain JSON (old format)."""
+    if path.lower().endswith(".json"):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+        return
+    tmp = path + ".tmp"
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("manifest.json", json.dumps({"format": "ScratchPyProject", "version": 1,
+                                                    "app": APP_VERSION}, indent=1))
+            z.writestr("project.json", json.dumps(data, ensure_ascii=False, indent=1))
+            for name in list_assets(assets_dir) if assets_dir else []:
+                z.write(os.path.join(assets_dir, name), "assets/" + name)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def read_project_file(path):
+    """The project data (a dict) of a .spyp or .json file. Raises ValueError when it is not a project."""
+    if path.lower().endswith(".spyp"):
+        try:
+            with zipfile.ZipFile(path) as z:
+                try:
+                    info = z.getinfo("project.json")
+                except KeyError:
+                    raise ValueError("This file is not a ScratchPy project.") from None
+                if info.file_size > MAX_PROJECT_JSON:
+                    raise ValueError("This project is too large.")
+                data = json.loads(z.read("project.json").decode("utf-8-sig"))
+        except zipfile.BadZipFile:
+            raise ValueError("This file is not a ScratchPy project.") from None
+    else:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    if not isinstance(data, dict) or not isinstance(data.get("scripts"), list):
+        raise ValueError("This file is not a ScratchPy project.")
+    return data
+
+
+def extract_project_assets(path, assets_dir):
+    """Copy the assets stored in a .spyp into `assets_dir`. Existing files are never overwritten.
+    Returns (added, kept) where `kept` counts files that already existed with different content."""
+    added = kept = 0
+    if not path.lower().endswith(".spyp"):
+        return added, kept
+    with zipfile.ZipFile(path) as z:
+        for info in z.infolist():
+            if not info.filename.startswith("assets/"):
+                continue
+            name = info.filename[len("assets/"):]
+            if (not name or name != safe_asset_name(name) or not asset_kind(name)
+                    or info.file_size > MAX_ASSET_SIZE):
+                continue                                    # No sub-folders, no odd names, no huge files.
+            target = os.path.join(assets_dir, name)
+            data = z.read(info)
+            if os.path.exists(target):
+                with open(target, "rb") as f:
+                    if f.read() != data:
+                        kept += 1
+                continue
+            os.makedirs(assets_dir, exist_ok=True)
+            with open(target, "wb") as f:
+                f.write(data)
+            added += 1
+    return added, kept
+
+
+def existing_recent(cfg):
+    """Recent files that still exist, most recent first."""
+    return [p for p in (cfg or {}).get("recent", []) if isinstance(p, str) and os.path.exists(p)]
 
 
 def reorder_tabs(items, src, pos):
@@ -3529,6 +3663,21 @@ def _server_error_text(code, raw):
     return "HTTP %d: %s" % (code, message)
 
 
+def assistant_502_message(timeout=10, opener=None):
+    """What to tell the user after an HTTP 502: the server answers /health with {"ok": true} when it is awake
+    (so the Gemini module itself is overloaded); otherwise it is probably still waking up."""
+    opener = opener or urllib.request.urlopen
+    try:
+        req = urllib.request.Request(ASSISTANT_HEALTH_URL, headers={"Accept": "application/json"})
+        with opener(req, timeout=timeout) as r:
+            payload = json.loads(r.read(4096).decode("utf-8"))
+        if isinstance(payload, dict) and payload.get("ok") is True:
+            return tr("This Gemini module is too busy, please use another one.")
+    except Exception:
+        pass
+    return tr("Please wait a minute while the chatbot wakes up.")
+
+
 def ask_assistant(model, messages, code, console, timeout=120):
     """Send a chat request to the ScratchPy server and return its response text."""
     if model not in DEFAULT_MODELS:
@@ -3546,6 +3695,8 @@ def ask_assistant(model, messages, code, console, timeout=120):
             raw = ex.read()
         except Exception:
             raw = b""
+        if ex.code == 502:
+            raise AssistantError(assistant_502_message()) from None
         raise AssistantError(_server_error_text(ex.code, raw)) from None
     except (socket.timeout, TimeoutError):
         raise AssistantError(
@@ -4524,6 +4675,7 @@ class App:
             self.assets_box.configure(bg=self.EDIT, fg=self.FG, selectbackground=self.ACCENT)
             self.assets_preview.configure(bg=self.EDIT, fg=self.MUTED)
             self.assets_text.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG)
+            self.files_box.configure(bg=self.EDIT, fg=self.FG, selectbackground=self.ACCENT)
         self.refresh_tabs()
         if hasattr(self, "code"):
             self.code.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG,
@@ -4806,6 +4958,7 @@ class App:
         self.settings_tab = ttk.Frame(self.tabs, padding=20)
         self.tabs.add(self.settings_tab, text="Settings")
         self.build_assets_tab()
+        self.build_files_tab()
         ttk.Label(self.settings_tab, text="Settings", font=self.font).pack(anchor="w", pady=(0, 16))
         appearance = ttk.LabelFrame(self.settings_tab, text="Appearance", padding=14)
         appearance.pack(anchor="nw", fill="x")
@@ -4870,6 +5023,8 @@ class App:
         self.autosave_status_var = tk.StringVar(value=tr("Waiting for changes"))
         ttk.Label(autosave_box, textvariable=self.autosave_status_var).grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        about_button = ttk.Button(self.settings_tab, text="About ScratchPy", command=self.show_about)
+        about_button.pack(side="bottom", anchor="w", pady=(12, 0))        # At the bottom of the Settings tab.
 
         self.palr = Renderer(self.pal, self.font)
         self.wsr = Renderer(self.ws, self.font, self.place_entry)
@@ -6091,7 +6246,7 @@ class App:
                     pass
                 self.update_autosave_status()
             return
-        if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".py", ".pyw")):
+        if len(sys.argv) > 1 and is_openable_file(sys.argv[1]):
             return
         if messagebox.askyesno(
                 "Restore autosave?", "An automatically saved project was found. Restore it?",
@@ -6457,6 +6612,66 @@ class App:
         except Exception:
             pass
 
+    # ---------- Files tab: save, open, export ----------
+    def build_files_tab(self):
+        tab = self.files_tab = ttk.Frame(self.tabs, padding=20)
+        self.tabs.add(tab, text="Files")
+        ttk.Label(tab, text="Files", font=self.font).pack(anchor="w", pady=(0, 12))
+        self.files_current = tk.StringVar(value="")
+        ttk.Label(tab, textvariable=self.files_current, wraplength=760).pack(anchor="w", pady=(0, 12))
+        cols = ttk.Frame(tab)
+        cols.pack(fill="x")
+
+        def group(title, buttons):
+            box = ttk.LabelFrame(cols, text=title, padding=14)
+            box.pack(side="left", fill="y", anchor="n", padx=(0, 12))
+            for text, command in buttons:
+                ttk.Button(box, text=text, command=lambda c=command: self.files_do(c)).pack(fill="x", pady=3)
+
+        group("Save", [("Save", self.save_file), ("Save As…", self.save_as)])
+        group("Open", [("New", self.new), ("Open (.py or project)…", self.open_file),
+                       ("Open from a link…", self.open_link)])
+        group("Export", [("Python file (.py)…", self.export_py), ("Image (.png / .svg)…", self.export_image),
+                         ("Copy the Python code", self.copy_code_from_files)])
+        self.files_status = tk.StringVar(value="")
+        ttk.Label(tab, textvariable=self.files_status, foreground=self.MUTED).pack(anchor="w", pady=(10, 0))
+        ttk.Label(tab, text="Recent files").pack(anchor="w", pady=(14, 4))
+        self.files_recent = []
+        self.files_box = tk.Listbox(tab, height=8, activestyle="none", exportselection=False, bg=self.EDIT,
+                                    fg=self.FG, selectbackground=self.ACCENT, highlightthickness=0, relief="flat")
+        self.files_box.pack(fill="both", expand=True)
+        self.files_box.bind("<Double-Button-1>", self.open_selected_recent)
+        self.files_box.bind("<Return>", self.open_selected_recent)
+        self.tabs.bind("<<NotebookTabChanged>>", lambda e: self.files_tab_shown(), add="+")
+
+    def files_tab_shown(self):
+        try:
+            if self.tabs.select() == str(self.files_tab):
+                self.refresh_files_tab()
+        except tk.TclError:
+            pass
+
+    def files_do(self, command):
+        command()
+        self.refresh_files_tab()
+
+    def copy_code_from_files(self):
+        self.copy_code()
+        self.files_status.set(tr("Python code copied."))
+
+    def refresh_files_tab(self):
+        self.files_current.set(tr("Current project: %s") % self.project_path if self.project_path
+                               else tr("Not saved yet"))
+        self.files_recent = existing_recent(self.cfg)
+        self.files_box.delete(0, "end")
+        for path in self.files_recent:
+            self.files_box.insert("end", "%s    \u2014    %s" % (os.path.basename(path), os.path.dirname(path)))
+
+    def open_selected_recent(self, event=None):
+        sel = self.files_box.curselection()
+        if sel and sel[0] < len(self.files_recent):
+            self.files_do(lambda: self.open_file(self.files_recent[sel[0]]))
+
     # ---------- undo history ----------
     def history_labels(self):
         """Readable lines for the history window: (labels, index of the current state)."""
@@ -6554,7 +6769,7 @@ class App:
         if raw is None:
             messagebox.showerror("Open from a link", "Only https links to GitHub files are accepted.")
             return
-        if not raw.lower().endswith((".py", ".pyw")):
+        if not raw.lower().endswith(PYTHON_EXTENSIONS):
             messagebox.showerror("Open from a link", "Only .py files can be opened from a link.")
             return
         if not messagebox.askyesno("Open from a link", "Download this file from GitHub?\n%s\n\n"
@@ -6927,7 +7142,7 @@ class App:
 
     def show_recent_menu(self, anchor):
         menu = tk.Menu(self.root, tearoff=0)
-        items = [p for p in self.cfg.get("recent", []) if isinstance(p, str) and os.path.exists(p)]
+        items = existing_recent(self.cfg)
         for p in items:
             menu.add_command(label="%s    —    %s" % (os.path.basename(p), os.path.dirname(p)),
                              command=lambda p=p: self.open_file(p))
@@ -7163,13 +7378,13 @@ class App:
 
     def open_dropped(self, files):
         for f in files:
-            if f.lower().endswith((".py", ".pyw", ".json", ".sb2", ".sb3")):
+            if is_openable_file(f):
                 self.open_file(f)
                 return
         if files:
             if self.add_assets([f for f in files if asset_kind(f)]):
                 return
-            messagebox.showinfo("Open", "Drop a Python (.py) file, a ScratchPy project (.json), "
+            messagebox.showinfo("Open", "Drop a Python (.py) file, a ScratchPy project (.spyp), "
                                 "or images, sounds and fonts to add them as assets.", parent=self.root)
 
     def save_as(self):
@@ -7179,14 +7394,13 @@ class App:
         path = self.project_path if not save_as else None
         if not path or not os.path.isdir(os.path.dirname(path)):
             path = filedialog.asksaveasfilename(
-                defaultextension=".json", initialfile="ScratchPy project.json",
-                filetypes=[("ScratchPy project", "*.json")])
+                defaultextension=".spyp", initialfile="ScratchPy project.spyp",
+                filetypes=[("ScratchPy project", "*.spyp"), ("ScratchPy project (old .json format)", "*.json")])
         if not path:
             return False
         data = self.project_data()
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=1)
+            write_project_file(path, data, self.assets_dir())
         except OSError as ex:
             messagebox.showerror("Save project", "Could not save the project:\n%s" % ex,
                                  parent=self.root)
@@ -7289,20 +7503,23 @@ class App:
     def open_file(self, path=None):
         if not path:
             path = filedialog.askopenfilename(filetypes=[
-                ("Python, ScratchPy or Scratch project", "*.py *.pyw *.json *.sb2 *.sb3"),
-                ("Python file", "*.py *.pyw"), ("ScratchPy project", "*.json"),
-                ("Scratch 2 / 3 project", "*.sb2 *.sb3")])
+                ("Python, ScratchPy or Scratch project",
+                 "*.py *.pyw *.pyi *.py3 *.pyt *.spyp *.json *.sb2 *.sb3"),
+                ("Python file", "*.py *.pyw *.pyi *.py3 *.pyt"), ("ScratchPy project", "*.spyp *.json"),
+                ("Scratch 2 / 3 project", "*.sb2 *.sb3"), ("All files", "*.*")])
         if not path:
             return
         if path.lower().endswith((".sb2", ".sb3")):
             self.open_scratch(path)
             return
-        if path.lower().endswith((".py", ".pyw")):
+        if path.lower().endswith((".pyc", ".pyo")):
+            messagebox.showerror("Open", "Compiled Python files (.pyc) cannot be opened.", parent=self.root)
+            return
+        if not path.lower().endswith(PROJECT_EXTENSIONS) and is_python_file(path):
             self.open_py(path)
             return
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_project_file(path)
             for d in data.get("paths", []):
                 if d not in sys.path:
                     sys.path.insert(0, d)
@@ -7316,7 +7533,7 @@ class App:
             scripts = [Script(s["x"], s["y"], [from_dict(b) for b in s["blocks"]])
                        for s in data["scripts"]]
         except Exception as ex:
-            messagebox.showerror("Open", "Invalid file:\n%s" % ex)
+            messagebox.showerror("Open", "Invalid file:\n%s" % tr(str(ex)))
             return
         self.set_scripts(scripts)
         self.set_notes(data.get("notes", ""))
@@ -7332,6 +7549,15 @@ class App:
             self.project_path = loaded_path
             self.cfg["project_path"] = self.project_path
             self.add_recent(loaded_path)
+            try:                                            # A .spyp carries its assets.
+                added, kept = extract_project_assets(loaded_path, self.assets_dir())
+            except (OSError, zipfile.BadZipFile):
+                added = kept = 0
+            if added and self.cat == "Assets":
+                self.show_palette("Assets")
+            if kept:
+                messagebox.showinfo("Open", "Some assets already existed with different content and were "
+                                    "kept: %d" % kept, parent=self.root)
         self.autosaved_state = self.project_state()
 
     def show_export_menu(self, anchor):
@@ -8007,7 +8233,7 @@ def main():
     app = App(root)
     root.update_idletasks()
     app.enable_file_drop()
-    if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".py", ".pyw")):
+    if len(sys.argv) > 1 and is_openable_file(sys.argv[1]):
         app.open_file(sys.argv[1])
     root.mainloop()
 
