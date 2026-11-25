@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Version: V26.15
+# Version: V26.16
 """
 ScratchPy - program in Python with Scratch-style blocks.
 
@@ -262,7 +262,8 @@ LIBS = {}   # Module name -> block IDs.
 # Panels of the right-hand column: key -> (title, minimum height, default share of the height).
 RIGHT_PANELS = {"code": ("Python code", 200, 0.334),
                 "console": ("Console", 110, 0.299),
-                "assistant": ("AI assistant", 200, 0.367)}
+                "assistant": ("AI assistant", 200, 0.367),
+                "notes": ("Notes", 90, 0.2)}
 
 
 def clean_panel_layout(data):
@@ -875,6 +876,35 @@ I18N_ROWS = [
     ("Some blocks have no Python equivalent and were kept as comments: %s", "Certains blocs n'ont pas d'équivalent Python et ont été gardés en commentaires : %s", "Einige Blöcke haben kein Python-Äquivalent und wurden als Kommentare beibehalten: %s", "Alcuni blocchi non hanno un equivalente Python e sono stati mantenuti come commenti: %s", "У некоторых блоков нет аналога в Python, они сохранены как комментарии: %s", "Algunos bloques no tienen equivalente en Python y se conservaron como comentarios: %s", "部分积木没有对应的 Python,已保留为注释:%s", "一部のブロックには対応する Python がなく、コメントとして残しました:%s"),
     ("What's new in %s", "Nouveautés de %s", "Neuerungen in %s", "Novità di %s", "Что нового в %s", "Novedades de %s", "%s 的新功能", "%s の新機能"),
     ("What's new", "Nouveautés", "Neuerungen", "Novità", "Что нового", "Novedades", "新功能", "新機能"),
+    ("Notes", "Notes", "Notizen", "Note", "Заметки", "Notas", "笔记", "メモ"),
+    ("Rename…", "Renommer…", "Umbenennen…", "Rinomina…", "Переименовать…", "Renombrar…", "重命名…", "名前を変更…"),
+    ("Rotate left", "Pivoter à gauche", "Nach links drehen", "Ruota a sinistra", "Повернуть влево", "Girar a la izquierda", "向左旋转", "左に回転"),
+    ("Rotate right", "Pivoter à droite", "Nach rechts drehen", "Ruota a destra", "Повернуть вправо", "Girar a la derecha", "向右旋转", "右に回転"),
+    ("Flip horizontally", "Retourner horizontalement", "Horizontal spiegeln", "Rifletti in orizzontale", "Отразить по горизонтали", "Voltear horizontalmente", "水平翻转", "左右反転"),
+    ("Grayscale", "Niveaux de gris", "Graustufen", "Scala di grigi", "Оттенки серого", "Escala de grises", "灰度", "グレースケール"),
+    ("Resize…", "Redimensionner…", "Größe ändern…", "Ridimensiona…", "Изменить размер…", "Cambiar tamaño…", "调整大小…", "サイズ変更…"),
+    ("Save text", "Enregistrer le texte", "Text speichern", "Salva il testo", "Сохранить текст", "Guardar el texto", "保存文本", "テキストを保存"),
+    ("Text saved.", "Texte enregistré.", "Text gespeichert.", "Testo salvato.", "Текст сохранён.", "Texto guardado.", "文本已保存。", "テキストを保存しました。"),
+    ("Undo last edit", "Annuler la dernière modification", "Letzte Änderung rückgängig", "Annulla l'ultima modifica", "Отменить последнее изменение", "Deshacer la última edición", "撤销上次编辑", "最後の編集を元に戻す"),
+    ("Rename the asset", "Renommer l'asset", "Asset umbenennen", "Rinomina la risorsa", "Переименовать ресурс", "Renombrar el recurso", "重命名资源", "アセットの名前を変更"),
+    ("New name:", "Nouveau nom :", "Neuer Name:", "Nuovo nome:", "Новое имя:", "Nuevo nombre:", "新名称:", "新しい名前:"),
+    ("An asset with this name already exists.", "Un asset porte déjà ce nom.", "Ein Asset mit diesem Namen existiert bereits.", "Esiste già una risorsa con questo nome.", "Ресурс с таким именем уже существует.", "Ya existe un recurso con este nombre.", "已存在同名资源。", "同じ名前のアセットが既にあります。"),
+    ("The new name must keep a supported file type.", "Le nouveau nom doit garder un type de fichier pris en charge.", "Der neue Name muss einen unterstützten Dateityp behalten.", "Il nuovo nome deve mantenere un tipo di file supportato.", "Новое имя должно сохранять поддерживаемый тип файла.", "El nuevo nombre debe conservar un tipo de archivo admitido.", "新名称必须保持受支持的文件类型。", "新しい名前は対応しているファイル形式のままにしてください。"),
+    ("Resize (percent)", "Redimensionner (pourcentage)", "Größe ändern (Prozent)", "Ridimensiona (percentuale)", "Изменение размера (проценты)", "Cambiar tamaño (porcentaje)", "调整大小(百分比)", "サイズ変更(パーセント)"),
+    ("Size in percent (5 to 400):", "Taille en pourcentage (5 à 400) :", "Größe in Prozent (5 bis 400):", "Dimensione in percentuale (da 5 a 400):", "Размер в процентах (от 5 до 400):", "Tamaño en porcentaje (de 5 a 400):", "大小百分比(5 到 400):", "サイズ(パーセント、5〜400):"),
+    ("Editing is not available for this image type.", "La modification n'est pas disponible pour ce type d'image.", "Bearbeiten ist für diesen Bildtyp nicht verfügbar.", "La modifica non è disponibile per questo tipo di immagine.", "Редактирование недоступно для этого типа изображений.", "La edición no está disponible para este tipo de imagen.", "此图片类型不支持编辑。", "この種類の画像は編集できません。"),
+    ("Image editing needs the Pillow library.", "La modification d'images nécessite la bibliothèque Pillow.", "Die Bildbearbeitung benötigt die Pillow-Bibliothek.", "La modifica delle immagini richiede la libreria Pillow.", "Для редактирования изображений нужна библиотека Pillow.", "La edición de imágenes necesita la biblioteca Pillow.", "编辑图片需要 Pillow 库。", "画像の編集には Pillow ライブラリが必要です。"),
+    ("Could not save the file:\n%s", "Impossible d'enregistrer le fichier :\n%s", "Die Datei konnte nicht gespeichert werden:\n%s", "Impossibile salvare il file:\n%s", "Не удалось сохранить файл:\n%s", "No se pudo guardar el archivo:\n%s", "无法保存文件:\n%s", "ファイルを保存できませんでした:\n%s"),
+    ("Could not export the program:\n%s", "Impossible d'exporter le programme :\n%s", "Das Programm konnte nicht exportiert werden:\n%s", "Impossibile esportare il programma:\n%s", "Не удалось экспортировать программу:\n%s", "No se pudo exportar el programa:\n%s", "无法导出程序:\n%s", "プログラムを書き出せませんでした:\n%s"),
+    ("The program and its assets were exported in the folder:\n%s", "Le programme et ses assets ont été exportés dans le dossier :\n%s", "Das Programm und seine Assets wurden in den Ordner exportiert:\n%s", "Il programma e le sue risorse sono stati esportati nella cartella:\n%s", "Программа и её ресурсы экспортированы в папку:\n%s", "El programa y sus recursos se exportaron en la carpeta:\n%s", "程序及其资源已导出到文件夹:\n%s", "プログラムとアセットを次のフォルダーに書き出しました:\n%s"),
+    ("Notes about this project, saved in the project file", "Notes sur ce projet, enregistrées dans le fichier du projet", "Notizen zu diesem Projekt, in der Projektdatei gespeichert", "Note su questo progetto, salvate nel file del progetto", "Заметки о проекте, сохраняются в файле проекта", "Notas sobre este proyecto, guardadas en el archivo del proyecto", "关于此项目的笔记,保存在项目文件中", "このプロジェクトのメモ(プロジェクトファイルに保存されます)"),
+    ("Developer mode", "Mode développeur", "Entwicklermodus", "Modalità sviluppatore", "Режим разработчика", "Modo desarrollador", "开发者模式", "開発者モード"),
+    ("Restart ScratchPy", "Redémarrer ScratchPy", "ScratchPy neu starten", "Riavvia ScratchPy", "Перезапустить ScratchPy", "Reiniciar ScratchPy", "重启 ScratchPy", "ScratchPy を再起動"),
+    ("Open the program folder", "Ouvrir le dossier du programme", "Programmordner öffnen", "Apri la cartella del programma", "Открыть папку программы", "Abrir la carpeta del programa", "打开程序文件夹", "プログラムのフォルダーを開く"),
+    ("Copy the version details", "Copier les détails de version", "Versionsdetails kopieren", "Copia i dettagli della versione", "Скопировать сведения о версии", "Copiar los detalles de la versión", "复制版本详情", "バージョン情報をコピー"),
+    ("Developer mode: this version (%s) is newer than the one on GitHub (%s).", "Mode développeur : cette version (%s) est plus récente que celle de GitHub (%s).", "Entwicklermodus: Diese Version (%s) ist neuer als die auf GitHub (%s).", "Modalità sviluppatore: questa versione (%s) è più recente di quella su GitHub (%s).", "Режим разработчика: эта версия (%s) новее версии на GitHub (%s).", "Modo desarrollador: esta versión (%s) es más reciente que la de GitHub (%s).", "开发者模式:此版本(%s)比 GitHub 上的版本(%s)更新。", "開発者モード:このバージョン(%s)は GitHub のバージョン(%s)より新しいです。"),
+    ("You are using a version newer than GitHub's (%s): developer mode is on.", "Tu utilises une version plus récente que celle de GitHub (%s) : le mode développeur est activé.", "Du verwendest eine neuere Version als die auf GitHub (%s): Der Entwicklermodus ist aktiv.", "Stai usando una versione più recente di quella su GitHub (%s): la modalità sviluppatore è attiva.", "Вы используете версию новее, чем на GitHub (%s): включён режим разработчика.", "Usas una versión más reciente que la de GitHub (%s): el modo desarrollador está activado.", "你使用的版本比 GitHub 上的(%s)更新:已启用开发者模式。", "GitHub のバージョン(%s)より新しいバージョンを使っています:開発者モードが有効です。"),
+    ("Updates can only be installed on Windows.", "Les mises à jour ne peuvent être installées que sous Windows.", "Updates können nur unter Windows installiert werden.", "Gli aggiornamenti possono essere installati solo su Windows.", "Обновления можно устанавливать только в Windows.", "Las actualizaciones solo se pueden instalar en Windows.", "更新只能在 Windows 上安装。", "アップデートは Windows でのみインストールできます。"),
     ("Greeting function", "Fonction de salutation", "Begrüßungsfunktion", "Funzione di saluto", "Функция приветствия",
      "Función de saludo", "问候函数", "あいさつ関数"),
     ("Examples", "Exemples", "Beispiele", "Esempi", "Примеры", "Ejemplos", "示例", "サンプル"),
@@ -2423,6 +2453,7 @@ ASSET_KINDS = {
 }
 ASSET_EXTENSIONS = tuple(e for v in ASSET_KINDS.values() for e in v)
 MAX_ASSET_SIZE = 50 * 1024 * 1024
+MAX_ASSET_TEXT = 1024 * 1024        # Larger text files are only previewed, not edited.
 
 
 def asset_kind(name):
@@ -2464,12 +2495,87 @@ def import_asset(src, folder):
     return name
 
 
-def copy_assets(src_dir, dst_dir):
+def rename_asset(folder, old, new):
+    """Rename an asset (keeping its extension and kind). Raises ValueError('type' or 'exists')."""
+    new = safe_asset_name(new)
+    if not os.path.splitext(new)[1]:
+        new += os.path.splitext(old)[1]
+    if asset_kind(new) != asset_kind(old):
+        raise ValueError("type")
+    if new != old and os.path.exists(os.path.join(folder, new)):
+        raise ValueError("exists")
+    if new != old:
+        os.rename(os.path.join(folder, old), os.path.join(folder, new))
+    return new
+
+
+def duplicate_asset(folder, name):
+    stem, ext = os.path.splitext(name)
+    new = unique_asset_name(folder, "%s_copy%s" % (stem, ext))
+    shutil.copyfile(os.path.join(folder, name), os.path.join(folder, new))
+    return new
+
+
+EDITABLE_IMAGES = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
+
+
+def edit_image_file(path, op, arg=None):
+    """Apply an edit to an image file in place; returns the new (width, height).
+    op: left, right, flipx, flipy, gray, resize (arg = percent 5..400)."""
+    if not HAVE_PIL:
+        raise ValueError("pillow")
+    if os.path.splitext(path)[1].lower() not in EDITABLE_IMAGES:
+        raise ValueError("type")
+    with Image.open(path) as opened:
+        img = opened.copy()
+        fmt = opened.format
+    if op == "left":
+        img = img.transpose(Image.ROTATE_90)
+    elif op == "right":
+        img = img.transpose(Image.ROTATE_270)
+    elif op == "flipx":
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    elif op == "flipy":
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    elif op == "gray":
+        alpha = img.getchannel("A") if "A" in img.getbands() else None
+        img = img.convert("L").convert("RGB")
+        if alpha is not None:
+            img.putalpha(alpha)
+    elif op == "resize":
+        percent = max(5, min(400, int(arg)))
+        img = img.resize((max(1, img.width * percent // 100), max(1, img.height * percent // 100)), Image.LANCZOS)
+    else:
+        raise ValueError("op")
+    if fmt == "JPEG" and img.mode != "RGB":
+        img = img.convert("RGB")
+    img.save(path, format=fmt)
+    return img.size
+
+
+def export_program(path, code, assets_dir):
+    """Write the program; when there are assets, make a folder <name>/ holding <name>.py and assets/.
+    Returns (path of the program, folder or None)."""
+    if not list_assets(assets_dir):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(code)
+        return path, None
+    stem = os.path.splitext(os.path.basename(path))[0]
+    folder = os.path.join(os.path.dirname(os.path.abspath(path)), stem)
+    os.makedirs(folder, exist_ok=True)
+    py = os.path.join(folder, stem + ".py")
+    with open(py, "w", encoding="utf-8") as f:
+        f.write(code)
+    copy_assets(assets_dir, os.path.join(folder, "assets"), overwrite=True)
+    return py, folder
+
+
+def copy_assets(src_dir, dst_dir, overwrite=False):
     """Copy the assets that are not yet in `dst_dir`; returns how many were copied."""
     count = 0
     for name in list_assets(src_dir):
         target = os.path.join(dst_dir, name)
-        if os.path.exists(target):
+        if os.path.exists(target) and not overwrite:
             continue
         os.makedirs(dst_dir, exist_ok=True)
         shutil.copyfile(os.path.join(src_dir, name), target)
@@ -3145,23 +3251,31 @@ def load_scratch_file(path, folder):
 # Release notes shown after an update and in the update prompt. A literal dict: it is also read
 # (without running it) from the downloaded source of a newer version. Lines starting with "# " are headings.
 RELEASE_NOTES = {
-    "V26.14": {
+    "V26.16": {
         "en": [
             "# New",
-            "Assets: add images, sounds, fonts and text files (Panels > Assets, or drag and drop onto the window). A new Assets block category gives one block per file.",
+            "Assets: a new Assets tab next to Settings lets you add images, sounds, fonts and text files (or drag and drop them onto the window). A new Assets block category gives one block per file.",
             "Scratch import: open Scratch 2 (.sb2) and Scratch 3 (.sb3) projects. Scripts become Python, then blocks; costumes and sounds become assets.",
             "Reorder project tabs by dragging them.",
             "After an update, the release notes of the new version are shown.",
+            "Open .pyw files. Edit assets inside ScratchPy: rename, duplicate, edit text files, rotate, flip, resize or grayscale images (with one undo).",
+            "Exporting a program that uses assets creates a folder with the .py file and its assets folder.",
+            "New Notes panel next to the code, console and assistant; the notes are saved in the project file.",
+            "Developer mode: switched on automatically when this version is newer than the one on GitHub (title tag, Developer menu in Panels, About).",
             "# Changes",
             "Programs now run in the project folder, so assets/... paths work.",
             "Switching tabs happens when the mouse button is released.",
         ],
         "fr": [
             "# Nouveautés",
-            "Assets : ajoute des images, sons, polices et fichiers texte (Panneaux > Assets, ou glisser-déposer sur la fenêtre). Une nouvelle catégorie de blocs Assets donne un bloc par fichier.",
+            "Assets : un nouvel onglet Assets à côté de Paramètres permet d'ajouter des images, sons, polices et fichiers texte (ou de les glisser-déposer sur la fenêtre). Une nouvelle catégorie de blocs Assets donne un bloc par fichier.",
             "Import Scratch : ouvre des projets Scratch 2 (.sb2) et Scratch 3 (.sb3). Les scripts deviennent du Python, puis des blocs ; costumes et sons deviennent des assets.",
             "Réorganise les onglets de projet en les faisant glisser.",
             "Après une mise à jour, les notes de version s'affichent.",
+            "Ouverture des fichiers .pyw. Modification des assets dans ScratchPy : renommer, dupliquer, modifier les fichiers texte, pivoter, retourner, redimensionner ou passer les images en niveaux de gris (avec un annuler).",
+            "L'export d'un programme qui utilise des assets crée un dossier avec le fichier .py et son dossier assets.",
+            "Nouveau panneau Notes à côté du code, de la console et de l'assistant ; les notes sont enregistrées dans le fichier du projet.",
+            "Mode développeur : activé automatiquement quand cette version est plus récente que celle de GitHub (étiquette dans le titre, menu Développeur dans Panneaux, À propos).",
             "# Changements",
             "Les programmes s'exécutent maintenant dans le dossier du projet : les chemins assets/... fonctionnent.",
             "Le changement d'onglet se fait au relâchement du bouton de la souris.",
@@ -3225,6 +3339,12 @@ def notes_text(lines):
         out.append("\n" + line[2:] if line.startswith("# ") and out else line[2:] if line.startswith("# ")
                    else "• " + line)
     return "\n".join(out)
+
+
+def is_developer_build(local, remote):
+    """True when this program's version is newer than the one published on GitHub."""
+    a, b = version_key(local), version_key(remote)
+    return a is not None and b is not None and a > b
 
 
 def reorder_tabs(items, src, pos):
@@ -3661,10 +3781,11 @@ class App:
         self.proc = None
         self.token = 0
         self.challenge = None
+        self.dev_mode = False
+        self.dev_remote = None
         self.challenge_win = None
         self.embed_frame = None
         self.history_win = None
-        self.assets_win = None
         self.root.after(1500, self.poll_system_theme)
         self.step_uid = self.error_uid = None       # Block being executed / block that raised an error.
         self.run_linemap, self.run_file, self.run_output = {}, "", []
@@ -3695,11 +3816,6 @@ class App:
         self.autosave_job = root.after(self.autosave_interval, self.autosave_tick)
 
     def check_for_updates(self, manual=False):
-        if sys.platform != "win32":
-            if manual:
-                messagebox.showinfo("Updates", "Update checks are available on Windows only.",
-                                    parent=self.root)
-            return
         if getattr(sys, "frozen", False):
             if manual:
                 messagebox.showinfo("Updates", "Updates are not supported by this packaged build.",
@@ -3727,9 +3843,17 @@ class App:
                     raise ValueError("GitHub did not return a valid version number.")
                 if current_key is None:
                     raise ValueError("This copy does not have a valid version number.")
+                if remote_key < current_key:                 # Newer than GitHub: developer build.
+                    self.update_q.put_nowait(("dev", None, None, remote_version, manual))
+                    return
                 if remote_key <= current_key:
                     if manual:
                         self.update_q.put_nowait(("current", None, None, remote_version, None))
+                    return
+                if sys.platform != "win32":                  # Installing updates is a Windows feature.
+                    if manual:
+                        self.update_q.put_nowait(("error", None, None, None,
+                                                  tr("Updates can only be installed on Windows.")))
                     return
 
                 req = urllib.request.Request(
@@ -3778,6 +3902,15 @@ class App:
             if self.update_checking:
                 self.root.after(200, self.poll_update)
             return
+        if status == "dev":
+            self.dev_remote = remote_version
+            if not self.dev_mode:
+                self.dev_mode = True
+                self.apply_dev_mode()
+            if error:                                        # A manual check: say it.
+                messagebox.showinfo("Updates", "You are using a version newer than GitHub's (%s): "
+                                    "developer mode is on." % remote_version, parent=self.root)
+            return
         if status == "current":
             messagebox.showinfo("Updates", "ScratchPy %s is up to date." % APP_VERSION,
                                 parent=self.root)
@@ -3800,6 +3933,32 @@ class App:
             self.update_payload = payload
             self.update_installer_payload = installer_payload
             self.on_close()
+
+    def apply_dev_mode(self):
+        self.root.title("ScratchPy - program in Python with blocks  [%s]" % tr("Developer mode"))
+
+    def restart_app(self):
+        try:
+            subprocess.Popen([sys.executable, os.path.abspath(__file__)], cwd=os.path.dirname(os.path.abspath(__file__)))
+        except OSError:
+            return
+        self.on_close()
+
+    def open_program_folder(self):
+        folder = os.path.dirname(os.path.abspath(__file__))
+        try:
+            if sys.platform == "win32":
+                os.startfile(folder)
+            else:
+                webbrowser.open("file://" + folder)
+        except Exception:
+            pass
+
+    def copy_version_details(self):
+        text = "ScratchPy %s (GitHub: %s) - Python %s - %s" % (
+            APP_VERSION, self.dev_remote, sys.version.split()[0], sys.platform)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
 
     def show_whats_new(self, force=False):
         """Release notes of the running version: once after each update, or on demand from the About window."""
@@ -3839,7 +3998,10 @@ class App:
         body = ttk.Frame(dialog, padding=18)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="ScratchPy", font=self.font).pack(anchor="w")
-        ttk.Label(body, text="Version %s" % APP_VERSION).pack(anchor="w", pady=(4, 14))
+        ttk.Label(body, text="Version %s" % APP_VERSION).pack(anchor="w", pady=(4, 14 if not self.dev_mode else 4))
+        if self.dev_mode:
+            ttk.Label(body, text=tr("Developer mode: this version (%s) is newer than the one on GitHub (%s).") %
+                      (APP_VERSION, self.dev_remote), wraplength=360).pack(anchor="w", pady=(0, 14))
         actions = ttk.Frame(body)
         actions.pack(fill="x")
         ttk.Button(actions, text="Check for updates",
@@ -4125,6 +4287,13 @@ class App:
         menu.add_command(label="Keyboard shortcuts…", command=self.show_shortcuts)
         menu.add_separator()
         menu.add_command(label="Reset layout", command=self.reset_panel_layout)
+        if self.dev_mode:
+            menu.add_separator()
+            dev = tk.Menu(menu, tearoff=0)
+            dev.add_command(label=tr("Restart ScratchPy"), command=self.restart_app)
+            dev.add_command(label=tr("Open the program folder"), command=self.open_program_folder)
+            dev.add_command(label=tr("Copy the version details"), command=self.copy_version_details)
+            menu.add_cascade(label=tr("Developer mode"), menu=dev)
         menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height())
 
     def _init_paned_positions(self):
@@ -4351,6 +4520,10 @@ class App:
                 recolor(widget)
 
         recolor(self.root)
+        if hasattr(self, "assets_box"):
+            self.assets_box.configure(bg=self.EDIT, fg=self.FG, selectbackground=self.ACCENT)
+            self.assets_preview.configure(bg=self.EDIT, fg=self.MUTED)
+            self.assets_text.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG)
         self.refresh_tabs()
         if hasattr(self, "code"):
             self.code.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG,
@@ -4361,6 +4534,8 @@ class App:
             self.console.configure(bg=colors["CONSOLE"], fg=colors["CONSOLE_FG"])
             self.console.tag_configure("err", foreground="#ff8a80" if dark else "#b42318")
             self.ai_chat.configure(bg=self.EDIT, fg=colors["CONSOLE_FG"])
+            if hasattr(self, "notes"):
+                self.notes.configure(bg=self.EDIT, fg=self.FG, insertbackground=self.FG)
             for tag, light, dark_color in (
                     ("user", "#26733b", "#a6e3a1"), ("bot", "#2459a6", "#89b4fa"),
                     ("err", "#b42318", "#f38ba8"), ("info", "#626b78", "#9399b2"),
@@ -4607,7 +4782,21 @@ class App:
         self.ai_chat.pack(fill="both", expand=True)
 
         self.ai_welcome()
-        self.panels = {"code": codef, "console": conf, "assistant": ai_frame}
+        notes_frame = tk.Frame(self.right_paned)
+        notes_head = tk.Frame(notes_frame)
+        notes_head.pack(fill="x")
+        tk.Label(notes_head, text="Notes", font=self.font).pack(side="left", padx=4)
+        self.add_panel_controls(notes_head, "notes")
+        notes_sb = ttk.Scrollbar(notes_frame, orient="vertical")
+        notes_sb.pack(side="right", fill="y")
+        self.notes = tk.Text(notes_frame, bg=self.EDIT, fg=self.FG, insertbackground=self.FG, font=mono, bd=0,
+                             padx=8, pady=4, wrap="word", undo=True, yscrollcommand=notes_sb.set)
+        notes_sb.configure(command=self.notes.yview)
+        self.notes.pack(fill="both", expand=True)
+        for seq in ("<KeyRelease>", "<<Paste>>", "<<Cut>>"):
+            self.notes.bind(seq, lambda e: self.root.after_idle(self.update_tab_marks), add="+")
+        ToolTip(self.notes, "Notes about this project, saved in the project file")
+        self.panels = {"code": codef, "console": conf, "assistant": ai_frame, "notes": notes_frame}
         self.panel_order, self.panel_hidden = clean_panel_layout(self.cfg.get("right_panels"))
 
         self.right_shown = False
@@ -4616,6 +4805,7 @@ class App:
         self.tabs.add(self.main_paned, text="Workspace")
         self.settings_tab = ttk.Frame(self.tabs, padding=20)
         self.tabs.add(self.settings_tab, text="Settings")
+        self.build_assets_tab()
         ttk.Label(self.settings_tab, text="Settings", font=self.font).pack(anchor="w", pady=(0, 16))
         appearance = ttk.LabelFrame(self.settings_tab, text="Appearance", padding=14)
         appearance.pack(anchor="nw", fill="x")
@@ -5723,6 +5913,7 @@ class App:
         self._edit_undo_before = None
         self._code_undo_before = None
         self.scripts = scripts
+        self.set_notes("")                      # Every loader starts from empty notes; project files then restore theirs.
         self.sel = set()
         self.step_uid = self.error_uid = None
         self.code_error = None
@@ -5738,6 +5929,7 @@ class App:
             "libs": self.libs,
             "imports": self.import_lines,
             "code": self.current_code(),
+            "notes": self.get_notes(),
         }
         return json.dumps(data, sort_keys=True, ensure_ascii=False)
 
@@ -5767,14 +5959,32 @@ class App:
         except OSError:
             return False
 
+    def get_notes(self):
+        widget = getattr(self, "notes", None)
+        return widget.get("1.0", "end-1c") if widget is not None else ""
+
+    def set_notes(self, text):
+        widget = getattr(self, "notes", None)
+        if widget is not None:
+            widget.delete("1.0", "end")
+            widget.insert("1.0", text if isinstance(text, str) else "")
+            widget.edit_reset()
+
     def project_data(self):
-        return {"version": 1, "paths": self.paths, "libs": self.libs,
+        data = {"version": 1, "paths": self.paths, "libs": self.libs,
                 "imports": self.import_lines, "scripts": [
             {"x": s.x, "y": s.y, "blocks": [to_dict(b) for b in s.blocks]}
             for s in self.scripts], "code": self.current_code()}
+        notes = self.get_notes()
+        if notes:
+            data["notes"] = notes
+        return data
 
     def history_snapshot(self):
-        return json.loads(json.dumps(self.project_data(), ensure_ascii=False))
+        """Project state for undo and tabs. The notes are not part of it: undoing blocks never touches them."""
+        data = json.loads(json.dumps(self.project_data(), ensure_ascii=False))
+        data.pop("notes", None)
+        return data
 
     def commit_undo(self, before):
         if before is None:
@@ -5881,7 +6091,7 @@ class App:
                     pass
                 self.update_autosave_status()
             return
-        if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".py"):
+        if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".py", ".pyw")):
             return
         if messagebox.askyesno(
                 "Restore autosave?", "An automatically saved project was found. Restore it?",
@@ -5971,11 +6181,7 @@ class App:
         if added:
             self.search_var.set("")
             self.show_palette("Assets")
-            if self.assets_win is not None:
-                try:
-                    self.refresh_assets_list()
-                except tk.TclError:
-                    self.assets_win = None
+            self.refresh_assets_list()
         return added
 
     def remove_asset(self, name):
@@ -5986,61 +6192,79 @@ class App:
         if self.cat == "Assets":
             self.show_palette("Assets")
 
-    def show_assets(self):
-        if self.assets_win is not None:
-            try:
-                self.assets_win.lift()
-                self.refresh_assets_list()
-                return
-            except tk.TclError:
-                self.assets_win = None
-        win = tk.Toplevel(self.root, bg=self.BG)
-        self.assets_win = win
-        win.title(tr("Assets"))
-        win.transient(self.root)
-        body = ttk.Frame(win, padding=12)
-        body.pack(fill="both", expand=True)
-        cols = ttk.Frame(body)
+    def build_assets_tab(self):
+        """The Assets tab, next to Settings."""
+        tab = self.assets_tab = ttk.Frame(self.tabs, padding=20)
+        self.tabs.add(tab, text="Assets")
+        ttk.Label(tab, text="Assets", font=self.font).pack(anchor="w", pady=(0, 12))
+        row = ttk.Frame(tab)
+        row.pack(fill="x", pady=(0, 10))
+        ttk.Button(row, text="Add files…", command=self.pick_assets).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Remove", command=self.remove_selected_asset).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Rename…", command=self.rename_selected_asset).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Duplicate", command=self.duplicate_selected_asset).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Use in blocks", command=lambda: (self.tabs.select(self.main_paned),
+                                                               self.show_palette("Assets"))).pack(side="left", padx=(0, 6))
+        self.assets_play = ttk.Button(row, text="Play", command=self.play_selected_asset)
+        self.assets_open_button = ttk.Button(row, text="Open the folder", command=self.open_assets_folder)
+        self.assets_open_button.pack(side="left", padx=(0, 6))
+        self.assets_edit_row = ttk.Frame(tab)
+        self.assets_edit_row.pack(fill="x", pady=(0, 10))
+        self.assets_image_buttons = []
+        for text, op in (("Rotate left", "left"), ("Rotate right", "right"), ("Flip horizontally", "flipx"),
+                         ("Flip vertically", "flipy"), ("Grayscale", "gray")):
+            self.assets_image_buttons.append(ttk.Button(self.assets_edit_row, text=text,
+                                                        command=lambda o=op: self.edit_selected_image(o)))
+        self.assets_image_buttons.append(ttk.Button(self.assets_edit_row, text="Resize…",
+                                                    command=lambda: self.edit_selected_image("resize")))
+        self.assets_save_text = ttk.Button(self.assets_edit_row, text="Save text", command=self.save_asset_text)
+        self.assets_undo_button = ttk.Button(self.assets_edit_row, text="Undo last edit",
+                                             command=self.undo_asset_edit)
+        self.asset_backup = None
+        cols = ttk.Frame(tab)
         cols.pack(fill="both", expand=True)
-        self.assets_box = tk.Listbox(cols, width=28, height=16, activestyle="none", exportselection=False,
+        self.assets_box = tk.Listbox(cols, width=34, activestyle="none", exportselection=False,
                                      bg=self.EDIT, fg=self.FG, selectbackground=self.ACCENT,
                                      highlightthickness=0, relief="flat")
         self.assets_box.pack(side="left", fill="y")
         right = ttk.Frame(cols)
-        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
-        self.assets_preview = tk.Label(right, width=34, height=14, bg=self.EDIT, fg=self.MUTED, anchor="center",
-                                       justify="center", wraplength=260)
+        right.pack(side="left", fill="both", expand=True, padx=(14, 0))
+        self.assets_preview = tk.Label(right, bg=self.EDIT, fg=self.MUTED, anchor="center",
+                                       justify="center", wraplength=520)
+        self.assets_preview.keep_color = True
         self.assets_preview.pack(fill="both", expand=True)
+        self.assets_text = tk.Text(right, wrap="word", bg=self.EDIT, fg=self.FG, insertbackground=self.FG,
+                                   relief="flat", highlightthickness=0, padx=8, pady=6, undo=True)
         self.assets_info = tk.StringVar(value="")
-        ttk.Label(right, textvariable=self.assets_info, wraplength=260).pack(anchor="w", pady=(6, 0))
-        row = ttk.Frame(body)
-        row.pack(fill="x", pady=(10, 0))
-        ttk.Button(row, text="Add files…", command=self.pick_assets).pack(side="left", padx=(0, 6))
-        ttk.Button(row, text="Remove", command=self.remove_selected_asset).pack(side="left", padx=(0, 6))
-        ttk.Button(row, text="Use in blocks", command=lambda: self.show_palette("Assets")).pack(side="left", padx=(0, 6))
-        self.assets_play = ttk.Button(row, text="Play", command=self.play_selected_asset)
-        ttk.Button(row, text="Open the folder", command=self.open_assets_folder).pack(side="left", padx=(0, 6))
-        ttk.Button(row, text="Close", command=lambda: close()).pack(side="right")
-        ttk.Label(body, text=tr("Folder: %s") % self.assets_dir(), wraplength=520, foreground=self.MUTED).pack(
-            anchor="w", pady=(8, 0))
+        ttk.Label(right, textvariable=self.assets_info, wraplength=520).pack(anchor="w", pady=(6, 0))
+        self.assets_folder_var = tk.StringVar(value="")
+        ttk.Label(tab, textvariable=self.assets_folder_var, foreground=self.MUTED).pack(anchor="w", pady=(10, 0))
+        self.assets_names = []
         self.assets_box.bind("<<ListboxSelect>>", lambda e: self.preview_asset())
-        def close():
-            self.assets_win = None
-            win.destroy()
+        self.tabs.bind("<<NotebookTabChanged>>", lambda e: self.assets_tab_shown(), add="+")
 
-        win.bind("<Escape>", lambda e: close())
-        win.protocol("WM_DELETE_WINDOW", close)
-        self.style_titlebar(win)
+    def assets_tab_shown(self):
+        try:
+            if self.tabs.select() == str(self.assets_tab):
+                self.refresh_assets_list()
+        except tk.TclError:
+            pass
+
+    def show_assets(self):
+        self.tabs.select(self.assets_tab)
         self.refresh_assets_list()
 
-    def refresh_assets_list(self):
+    def refresh_assets_list(self, select=None):
         names = list_assets(self.assets_dir())
         self.assets_names = names
+        self.assets_folder_var.set(tr("Folder: %s") % self.assets_dir())
         self.assets_box.delete(0, "end")
         for n in names:
             self.assets_box.insert("end", n)
         if names:
-            self.assets_box.selection_set(0)
+            index = names.index(select) if select in names else 0
+            self.assets_box.selection_set(index)
+            self.assets_box.see(index)
         self.preview_asset()
 
     def selected_asset(self):
@@ -6052,6 +6276,9 @@ class App:
         label = self.assets_preview
         label.configure(image="", text="")
         self.assets_image = None
+        self.assets_text.pack_forget()
+        label.pack(fill="both", expand=True)
+        self.show_asset_tools(name)
         if name is None:
             label.configure(text=tr("No asset yet. Add images, sounds or fonts with 'Add files…', "
                                     "or drop them on the window."))
@@ -6076,7 +6303,15 @@ class App:
                 label.configure(image=self.assets_image)
             elif kind == "text":
                 with open(path, encoding="utf-8", errors="replace") as f:
-                    label.configure(text=f.read(600))
+                    content = f.read(MAX_ASSET_TEXT + 1)
+                if len(content) <= MAX_ASSET_TEXT:
+                    label.pack_forget()
+                    self.assets_text.pack(fill="both", expand=True)
+                    self.assets_text.delete("1.0", "end")
+                    self.assets_text.insert("1.0", content)
+                    self.assets_text.edit_reset()
+                else:
+                    label.configure(text=content[:600])
             else:
                 label.configure(text=name)
         except Exception:
@@ -6086,8 +6321,112 @@ class App:
         else:
             self.assets_play.pack_forget()
 
+    def show_asset_tools(self, name):
+        """Show the edit buttons that fit the selected asset."""
+        for w in self.assets_edit_row.winfo_children():
+            w.pack_forget()
+        kind = asset_kind(name) if name else None
+        if kind == "image" and os.path.splitext(name)[1].lower() in EDITABLE_IMAGES:
+            for b in self.assets_image_buttons:
+                b.pack(side="left", padx=(0, 6))
+        elif kind == "text":
+            self.assets_save_text.pack(side="left", padx=(0, 6))
+        if kind in ("image", "text") and self.asset_backup is not None and self.asset_backup[0] == name:
+            self.assets_undo_button.pack(side="left", padx=(0, 6))
+
+    def backup_asset(self, name):
+        try:
+            with open(os.path.join(self.assets_dir(), name), "rb") as f:
+                self.asset_backup = (name, f.read())
+        except OSError:
+            self.asset_backup = None
+
+    def edit_selected_image(self, op):
+        name = self.selected_asset()
+        if not name:
+            return
+        arg = None
+        if op == "resize":
+            answer = self.ask_string("Resize (percent)", "Size in percent (5 to 400):", "50")
+            if answer is None:
+                return
+            try:
+                arg = int(answer.strip().rstrip("%"))
+            except ValueError:
+                return
+        self.backup_asset(name)
+        try:
+            edit_image_file(os.path.join(self.assets_dir(), name), op, arg)
+        except ValueError as ex:
+            self.asset_backup = None
+            messagebox.showerror("Assets", "Image editing needs the Pillow library." if str(ex) == "pillow"
+                                 else "Editing is not available for this image type.", parent=self.root)
+            return
+        except OSError as ex:
+            messagebox.showerror("Assets", "Could not save the file:\n%s" % ex, parent=self.root)
+            return
+        self.preview_asset()
+
+    def save_asset_text(self):
+        name = self.selected_asset()
+        if not name or asset_kind(name) != "text":
+            return
+        self.backup_asset(name)
+        try:
+            with open(os.path.join(self.assets_dir(), name), "w", encoding="utf-8", newline="") as f:
+                f.write(self.assets_text.get("1.0", "end-1c"))
+        except OSError as ex:
+            messagebox.showerror("Assets", "Could not save the file:\n%s" % ex, parent=self.root)
+            return
+        self.assets_undo_button.pack(side="left", padx=(0, 6))
+        self.assets_info.set(tr("Text saved."))
+
+    def undo_asset_edit(self):
+        backup, self.asset_backup = self.asset_backup, None
+        if not backup:
+            return
+        try:
+            with open(os.path.join(self.assets_dir(), backup[0]), "wb") as f:
+                f.write(backup[1])
+        except OSError as ex:
+            messagebox.showerror("Assets", "Could not save the file:\n%s" % ex, parent=self.root)
+        self.preview_asset()
+
+    def rename_selected_asset(self):
+        name = self.selected_asset()
+        if not name:
+            return
+        new = self.ask_string("Rename the asset", "New name:", name)
+        if not new or not new.strip():
+            return
+        try:
+            result = rename_asset(self.assets_dir(), name, new.strip())
+        except ValueError as ex:
+            messagebox.showerror("Assets", "An asset with this name already exists." if str(ex) == "exists"
+                                 else "The new name must keep a supported file type.", parent=self.root)
+            return
+        except OSError as ex:
+            messagebox.showerror("Assets", "Could not save the file:\n%s" % ex, parent=self.root)
+            return
+        self.refresh_assets_list(select=result)
+        if self.cat == "Assets":
+            self.show_palette("Assets")
+
+    def duplicate_selected_asset(self):
+        name = self.selected_asset()
+        if not name:
+            return
+        try:
+            result = duplicate_asset(self.assets_dir(), name)
+        except OSError as ex:
+            messagebox.showerror("Assets", "Could not save the file:\n%s" % ex, parent=self.root)
+            return
+        self.refresh_assets_list(select=result)
+        if self.cat == "Assets":
+            self.show_palette("Assets")
+
     def pick_assets(self):
-        files = filedialog.askopenfilenames(parent=self.assets_win or self.root, filetypes=[
+        files = filedialog.askopenfilenames(parent=self.root, filetypes=[
             ("Images, sounds, fonts, text", " ".join("*" + e for e in ASSET_EXTENSIONS)), ("All files", "*.*")])
         if files:
             self.add_assets(list(files))
@@ -6095,7 +6434,7 @@ class App:
     def remove_selected_asset(self):
         name = self.selected_asset()
         if name and messagebox.askyesno("Assets", "Remove the asset '%s'? Programs that use it will no longer "
-                                        "find it." % name, parent=self.assets_win):
+                                        "find it." % name, parent=self.root):
             self.remove_asset(name)
             self.refresh_assets_list()
 
@@ -6215,7 +6554,7 @@ class App:
         if raw is None:
             messagebox.showerror("Open from a link", "Only https links to GitHub files are accepted.")
             return
-        if not raw.lower().endswith(".py"):
+        if not raw.lower().endswith((".py", ".pyw")):
             messagebox.showerror("Open from a link", "Only .py files can be opened from a link.")
             return
         if not messagebox.askyesno("Open from a link", "Download this file from GitHub?\n%s\n\n"
@@ -6367,7 +6706,7 @@ class App:
         modified = bool(self.scripts) and self.project_state() != self.saved_state
         return {"data": self.history_snapshot(), "path": self.project_path, "undo": list(self.undo_stack),
                 "redo": list(self.redo_stack), "saved": self.saved_state, "modified": modified,
-                "number": self.ptabs[self.active_tab]["number"]}
+                "number": self.ptabs[self.active_tab]["number"], "notes": self.get_notes()}
 
     def store_active(self):
         self.ptabs[self.active_tab] = self.capture_tab()
@@ -6375,6 +6714,7 @@ class App:
     def apply_tab(self, rec):
         self.stop()
         self.restore_history_snapshot(rec["data"])
+        self.set_notes(rec.get("notes", ""))
         self.project_path = rec["path"]
         self.undo_stack = rec["undo"]
         self.redo_stack = rec["redo"]
@@ -6949,15 +7289,15 @@ class App:
     def open_file(self, path=None):
         if not path:
             path = filedialog.askopenfilename(filetypes=[
-                ("Python, ScratchPy or Scratch project", "*.py *.json *.sb2 *.sb3"),
-                ("Python file", "*.py"), ("ScratchPy project", "*.json"),
+                ("Python, ScratchPy or Scratch project", "*.py *.pyw *.json *.sb2 *.sb3"),
+                ("Python file", "*.py *.pyw"), ("ScratchPy project", "*.json"),
                 ("Scratch 2 / 3 project", "*.sb2 *.sb3")])
         if not path:
             return
         if path.lower().endswith((".sb2", ".sb3")):
             self.open_scratch(path)
             return
-        if path.lower().endswith(".py"):
+        if path.lower().endswith((".py", ".pyw")):
             self.open_py(path)
             return
         try:
@@ -6979,6 +7319,7 @@ class App:
             messagebox.showerror("Open", "Invalid file:\n%s" % ex)
             return
         self.set_scripts(scripts)
+        self.set_notes(data.get("notes", ""))
         saved_code = data.get("code")
         if isinstance(saved_code, str):
             self.code.delete("1.0", "end")
@@ -7026,19 +7367,16 @@ class App:
     def export_py(self):
         path = filedialog.asksaveasfilename(defaultextension=".py",
                                             filetypes=[("Python", "*.py")])
-        if path:
-            code = self.current_code()
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(code)
-            if "assets/" in code and list_assets(self.assets_dir()):
-                target = os.path.join(os.path.dirname(os.path.abspath(path)), "assets")
-                if os.path.abspath(target) != os.path.abspath(self.assets_dir()):
-                    try:
-                        copy_assets(self.assets_dir(), target)
-                        messagebox.showinfo("Export", "The assets folder was copied next to the exported file.",
-                                            parent=self.root)
-                    except OSError:
-                        pass
+        if not path:
+            return
+        try:
+            py, folder = export_program(path, self.current_code(), self.assets_dir())
+        except OSError as ex:
+            messagebox.showerror("Export", "Could not export the program:\n%s" % ex, parent=self.root)
+            return
+        if folder:
+            messagebox.showinfo("Export", "The program and its assets were exported in the folder:\n%s" % folder,
+                                parent=self.root)
 
     def copy_code(self):
         self.root.clipboard_clear()
@@ -7669,7 +8007,7 @@ def main():
     app = App(root)
     root.update_idletasks()
     app.enable_file_drop()
-    if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".py"):
+    if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".py", ".pyw")):
         app.open_file(sys.argv[1])
     root.mainloop()
 
